@@ -25,6 +25,11 @@
   - Current selected typ/pdf filename display
   - Prev/next page buttons now have disabled state at boundaries
   - Empty preview state now includes direct import action and clear guidance text
+- Added heading-to-source jump behavior (outline click scrolls editor area to target line).
+- Added restore-last-session behavior:
+  - Persist typ URI, pdf URI, and last PDF page index.
+  - Recover saved state on next app launch.
+- Added PDF neighbor-page prefetch cache (current page +/- 1).
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).
 

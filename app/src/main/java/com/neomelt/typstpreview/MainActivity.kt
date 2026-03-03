@@ -29,10 +29,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,8 +43,14 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.launch
 import java.io.BufferedReader
 import java.io.InputStreamReader
+
+private const val PREF_NAME = "typst_previewer_prefs"
+private const val PREF_TYP_URI = "typ_uri"
+private const val PREF_PDF_URI = "pdf_uri"
+private const val PREF_PDF_PAGE = "pdf_page"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,18 +68,62 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun TypstPreviewScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val typScrollState = rememberScrollState()
+    val prefs = remember { context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE) }
+
+    var typUri by remember { mutableStateOf<Uri?>(null) }
     var typContent by remember { mutableStateOf("还未导入 .typ 文件") }
     var typName by remember { mutableStateOf<String?>(null) }
     var expectedPdfName by remember { mutableStateOf<String?>(null) }
-    var pdfName by remember { mutableStateOf<String?>(null) }
+
     var pdfUri by remember { mutableStateOf<Uri?>(null) }
+    var pdfName by remember { mutableStateOf<String?>(null) }
     var pdfPageCount by remember { mutableIntStateOf(0) }
     var pdfPageIndex by remember { mutableIntStateOf(0) }
+
     var status by remember { mutableStateOf("提示：先导入 .typ，再导入对应 PDF 预览") }
+
+    LaunchedEffect(Unit) {
+        val savedTyp = prefs.getString(PREF_TYP_URI, null)
+        val savedPdf = prefs.getString(PREF_PDF_URI, null)
+        val savedPage = prefs.getInt(PREF_PDF_PAGE, 0)
+
+        if (!savedTyp.isNullOrBlank()) {
+            val uri = Uri.parse(savedTyp)
+            typUri = uri
+            typName = DocumentFile.fromSingleUri(context, uri)?.name
+            expectedPdfName = typName?.substringBeforeLast(".")?.plus(".pdf")
+            typContent = readText(context, uri)
+            status = "已恢复上次 Typst: ${typName ?: "unknown"}"
+        }
+
+        if (!savedPdf.isNullOrBlank()) {
+            val uri = Uri.parse(savedPdf)
+            val count = getPdfPageCount(context, uri)
+            if (count > 0) {
+                pdfUri = uri
+                pdfName = DocumentFile.fromSingleUri(context, uri)?.name
+                pdfPageCount = count
+                pdfPageIndex = savedPage.coerceIn(0, count - 1)
+                status = "已恢复上次 PDF，共 $pdfPageCount 页"
+            }
+        }
+    }
+
+    LaunchedEffect(typUri, pdfUri, pdfPageIndex) {
+        prefs.edit()
+            .putString(PREF_TYP_URI, typUri?.toString())
+            .putString(PREF_PDF_URI, pdfUri?.toString())
+            .putInt(PREF_PDF_PAGE, pdfPageIndex)
+            .apply()
+    }
 
     val pickTyp = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         grantReadPermissionSafely(context, uri)
+
+        typUri = uri
         typName = DocumentFile.fromSingleUri(context, uri)?.name
         expectedPdfName = typName?.substringBeforeLast(".")?.plus(".pdf")
         typContent = readText(context, uri)
@@ -155,7 +208,13 @@ private fun TypstPreviewScreen() {
                         text = "${" ".repeat(indent / 2)}• ${heading.title} (L${heading.lineNumber})",
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { status = "定位提示：标题 ${heading.title} 在第 ${heading.lineNumber} 行" }
+                            .clickable {
+                                val target = ((heading.lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
+                                scope.launch {
+                                    typScrollState.animateScrollTo(target)
+                                }
+                                status = "已跳转到第 ${heading.lineNumber} 行附近"
+                            }
                             .padding(vertical = 2.dp)
                     )
                 }
@@ -169,7 +228,7 @@ private fun TypstPreviewScreen() {
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(typScrollState)
             )
         }
 
@@ -190,7 +249,7 @@ private fun TypstPreviewScreen() {
                 }
                 Text("第 ${pdfPageIndex + 1} / $pdfPageCount 页")
             }
-            PdfPageImage(uri = pdfUri!!, pageIndex = pdfPageIndex)
+            PdfPageImage(uri = pdfUri!!, pageIndex = pdfPageIndex, pageCount = pdfPageCount)
         } else {
             Text("尚未加载 PDF。先导入 .typ，再选择同名 PDF 进行预览。")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -218,10 +277,26 @@ private fun StatusBar(status: String) {
 }
 
 @Composable
-private fun PdfPageImage(uri: Uri, pageIndex: Int) {
+private fun PdfPageImage(uri: Uri, pageIndex: Int, pageCount: Int) {
     val context = LocalContext.current
+    val pageCache = remember(uri) { mutableStateMapOf<Int, PdfRenderResult>() }
+
     val result = remember(uri, pageIndex) {
-        renderPdfPage(context, uri, pageIndex)
+        pageCache[pageIndex] ?: renderPdfPage(context, uri, pageIndex).also {
+            pageCache[pageIndex] = it
+        }
+    }
+
+    LaunchedEffect(uri, pageIndex, pageCount) {
+        val prev = pageIndex - 1
+        val next = pageIndex + 1
+
+        if (prev >= 0 && pageCache[prev] == null) {
+            pageCache[prev] = renderPdfPage(context, uri, prev)
+        }
+        if (next < pageCount && pageCache[next] == null) {
+            pageCache[next] = renderPdfPage(context, uri, next)
+        }
     }
 
     when (result) {
