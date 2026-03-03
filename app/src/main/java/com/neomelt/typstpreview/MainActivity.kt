@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -121,7 +122,8 @@ private fun TypstPreviewScreen() {
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text("Typst Android 预览器（本地预览 MVP）", style = MaterialTheme.typography.titleLarge)
-        Text(status)
+
+        StatusBar(status)
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { pickTyp.launch(arrayOf("text/*")) }) {
@@ -134,6 +136,9 @@ private fun TypstPreviewScreen() {
                 Text("编译（占位）")
             }
         }
+
+        Text("当前 typ：${typName ?: "未选择"}")
+        Text("当前 pdf：${pdfName ?: "未选择"}")
 
         expectedPdfName?.let {
             Text("推荐文件名：$it")
@@ -174,14 +179,36 @@ private fun TypstPreviewScreen() {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Button(onClick = { if (pdfPageIndex > 0) pdfPageIndex-- }) { Text("上一页") }
-                Button(onClick = { if (pdfPageIndex < pdfPageCount - 1) pdfPageIndex++ }) { Text("下一页") }
+                Button(onClick = { if (pdfPageIndex > 0) pdfPageIndex-- }, enabled = pdfPageIndex > 0) {
+                    Text("上一页")
+                }
+                Button(
+                    onClick = { if (pdfPageIndex < pdfPageCount - 1) pdfPageIndex++ },
+                    enabled = pdfPageIndex < pdfPageCount - 1
+                ) {
+                    Text("下一页")
+                }
                 Text("第 ${pdfPageIndex + 1} / $pdfPageCount 页")
             }
             PdfPageImage(uri = pdfUri!!, pageIndex = pdfPageIndex)
         } else {
             Text("尚未加载 PDF")
         }
+    }
+}
+
+@Composable
+private fun StatusBar(status: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(0xFFEAF3FF),
+        tonalElevation = 1.dp
+    ) {
+        Text(
+            text = status,
+            modifier = Modifier.padding(10.dp),
+            style = MaterialTheme.typography.bodyMedium
+        )
     }
 }
 
@@ -280,11 +307,11 @@ private fun renderPdfPage(context: android.content.Context, uri: Uri, pageIndex:
         val bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
         page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
         PdfRenderResult.Success(bitmap)
-    } catch (e: SecurityException) {
+    } catch (_: SecurityException) {
         PdfRenderResult.Error(PdfRenderError.OPEN_FAILED)
-    } catch (e: IllegalStateException) {
+    } catch (_: IllegalStateException) {
         PdfRenderResult.Error(PdfRenderError.FILE_CORRUPTED)
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         PdfRenderResult.Error(PdfRenderError.UNKNOWN)
     } finally {
         page?.close()

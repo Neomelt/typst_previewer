@@ -20,6 +20,10 @@
   - Page out of range
   - File corrupted
   - Unknown error
+- Added minimal UI polish for usability:
+  - Dedicated status bar block
+  - Current selected typ/pdf filename display
+  - Prev/next page buttons now have disabled state at boundaries
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).
 
