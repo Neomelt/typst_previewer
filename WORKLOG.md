@@ -12,7 +12,14 @@
   - Typst heading outline parser (`=`/`==`/`===`).
   - On-screen outline list with line hints.
   - Filename consistency hint when selected `.pdf` does not match `.typ` base name.
+  - Import `.typ` 后自动给出同名 PDF 推荐名（`xxx.pdf`）。
+  - PDF 导入按钮在有 typ 后变为“选择同名 PDF”。
   - Compile button placeholder for next-stage integration.
+- Added render error classification for PDF preview:
+  - Open failed (permission/file open failure)
+  - Page out of range
+  - File corrupted
+  - Unknown error
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).
 

@@ -60,6 +60,7 @@ private fun TypstPreviewScreen() {
     val context = LocalContext.current
     var typContent by remember { mutableStateOf("还未导入 .typ 文件") }
     var typName by remember { mutableStateOf<String?>(null) }
+    var expectedPdfName by remember { mutableStateOf<String?>(null) }
     var pdfName by remember { mutableStateOf<String?>(null) }
     var pdfUri by remember { mutableStateOf<Uri?>(null) }
     var pdfPageCount by remember { mutableIntStateOf(0) }
@@ -68,36 +69,46 @@ private fun TypstPreviewScreen() {
 
     val pickTyp = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        context.contentResolver.takePersistableUriPermission(
-            uri,
-            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-        )
+        grantReadPermissionSafely(context, uri)
         typName = DocumentFile.fromSingleUri(context, uri)?.name
+        expectedPdfName = typName?.substringBeforeLast(".")?.plus(".pdf")
         typContent = readText(context, uri)
-        status = "已导入 Typst: ${typName ?: "unknown"}"
+        status = if (expectedPdfName != null) {
+            "已导入 Typst: ${typName ?: "unknown"}，建议选择同名 PDF：$expectedPdfName"
+        } else {
+            "已导入 Typst: ${typName ?: "unknown"}"
+        }
     }
 
     val pickPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        context.contentResolver.takePersistableUriPermission(
-            uri,
-            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-        )
+        grantReadPermissionSafely(context, uri)
+
         if (!isPdf(context, uri)) {
-            status = "选择的不是 PDF 文件"
+            status = "选择失败：不是 PDF 文件"
             return@rememberLauncherForActivityResult
         }
 
         pdfName = DocumentFile.fromSingleUri(context, uri)?.name
         val sameBase = hasSameBaseName(typName, pdfName)
+        val pageCount = getPdfPageCount(context, uri)
+
+        if (pageCount <= 0) {
+            status = "PDF 加载失败：文件损坏或权限不足"
+            pdfUri = null
+            pdfPageCount = 0
+            pdfPageIndex = 0
+            return@rememberLauncherForActivityResult
+        }
 
         pdfUri = uri
-        pdfPageCount = getPdfPageCount(context, uri)
+        pdfPageCount = pageCount
         pdfPageIndex = 0
         status = if (sameBase) {
             "已导入同名 PDF，共 $pdfPageCount 页"
         } else {
-            "已导入 PDF（与 typ 文件名不同），共 $pdfPageCount 页"
+            val suggestion = expectedPdfName?.let { "，建议选择：$it" } ?: ""
+            "已导入 PDF（与 typ 文件名不同），共 $pdfPageCount 页$suggestion"
         }
     }
 
@@ -117,11 +128,15 @@ private fun TypstPreviewScreen() {
                 Text("导入 .typ")
             }
             Button(onClick = { pickPdf.launch(arrayOf("application/pdf")) }) {
-                Text("导入 PDF")
+                Text(if (expectedPdfName == null) "导入 PDF" else "选择同名 PDF")
             }
             Button(onClick = { status = "编译功能占位：后续可接本地/远端 typst 编译" }) {
                 Text("编译（占位）")
             }
+        }
+
+        expectedPdfName?.let {
+            Text("推荐文件名：$it")
         }
 
         Text("--- 文档目录（Typst 标题） ---")
@@ -173,20 +188,24 @@ private fun TypstPreviewScreen() {
 @Composable
 private fun PdfPageImage(uri: Uri, pageIndex: Int) {
     val context = LocalContext.current
-    val bitmap = remember(uri, pageIndex) {
+    val result = remember(uri, pageIndex) {
         renderPdfPage(context, uri, pageIndex)
     }
 
-    if (bitmap != null) {
-        Image(
-            bitmap = bitmap.asImageBitmap(),
-            contentDescription = "PDF page",
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp)
-        )
-    } else {
-        Text("PDF 渲染失败")
+    when (result) {
+        is PdfRenderResult.Success -> {
+            Image(
+                bitmap = result.bitmap.asImageBitmap(),
+                contentDescription = "PDF page",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+            )
+        }
+
+        is PdfRenderResult.Error -> {
+            Text("PDF 渲染失败：${result.reason.message}")
+        }
     }
 }
 
@@ -205,6 +224,17 @@ private fun hasSameBaseName(typName: String?, pdfName: String?): Boolean {
     return typName.substringBeforeLast(".") == pdfName.substringBeforeLast(".")
 }
 
+private fun grantReadPermissionSafely(context: android.content.Context, uri: Uri) {
+    try {
+        context.contentResolver.takePersistableUriPermission(
+            uri,
+            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+        )
+    } catch (_: Exception) {
+        // ignore non-persistable permission cases
+    }
+}
+
 private fun isPdf(context: android.content.Context, uri: Uri): Boolean {
     val type = context.contentResolver.getType(uri)
     if (type == "application/pdf") return true
@@ -221,20 +251,41 @@ private fun getPdfPageCount(context: android.content.Context, uri: Uri): Int {
     }
 }
 
-private fun renderPdfPage(context: android.content.Context, uri: Uri, pageIndex: Int): Bitmap? {
+private sealed interface PdfRenderResult {
+    data class Success(val bitmap: Bitmap) : PdfRenderResult
+    data class Error(val reason: PdfRenderError) : PdfRenderResult
+}
+
+private enum class PdfRenderError(val message: String) {
+    OPEN_FAILED("无法打开文件（可能无权限）"),
+    PAGE_OUT_OF_RANGE("页码超出范围"),
+    FILE_CORRUPTED("文件可能损坏"),
+    UNKNOWN("未知错误")
+}
+
+private fun renderPdfPage(context: android.content.Context, uri: Uri, pageIndex: Int): PdfRenderResult {
     var pfd: ParcelFileDescriptor? = null
     var renderer: PdfRenderer? = null
     var page: PdfRenderer.Page? = null
     return try {
-        pfd = context.contentResolver.openFileDescriptor(uri, "r") ?: return null
+        pfd = context.contentResolver.openFileDescriptor(uri, "r")
+            ?: return PdfRenderResult.Error(PdfRenderError.OPEN_FAILED)
         renderer = PdfRenderer(pfd)
-        if (pageIndex !in 0 until renderer.pageCount) return null
+
+        if (pageIndex !in 0 until renderer.pageCount) {
+            return PdfRenderResult.Error(PdfRenderError.PAGE_OUT_OF_RANGE)
+        }
+
         page = renderer.openPage(pageIndex)
         val bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
         page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-        bitmap
-    } catch (_: Exception) {
-        null
+        PdfRenderResult.Success(bitmap)
+    } catch (e: SecurityException) {
+        PdfRenderResult.Error(PdfRenderError.OPEN_FAILED)
+    } catch (e: IllegalStateException) {
+        PdfRenderResult.Error(PdfRenderError.FILE_CORRUPTED)
+    } catch (e: Exception) {
+        PdfRenderResult.Error(PdfRenderError.UNKNOWN)
     } finally {
         page?.close()
         renderer?.close()
