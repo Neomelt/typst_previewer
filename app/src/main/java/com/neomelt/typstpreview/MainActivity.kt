@@ -8,14 +8,19 @@ import android.os.ParcelFileDescriptor
 import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -31,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
 import java.io.BufferedReader
@@ -51,9 +57,10 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun TypstPreviewScreen() {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     var typContent by remember { mutableStateOf("还未导入 .typ 文件") }
     var typName by remember { mutableStateOf<String?>(null) }
+    var pdfName by remember { mutableStateOf<String?>(null) }
     var pdfUri by remember { mutableStateOf<Uri?>(null) }
     var pdfPageCount by remember { mutableIntStateOf(0) }
     var pdfPageIndex by remember { mutableIntStateOf(0) }
@@ -80,17 +87,29 @@ private fun TypstPreviewScreen() {
             status = "选择的不是 PDF 文件"
             return@rememberLauncherForActivityResult
         }
+
+        pdfName = DocumentFile.fromSingleUri(context, uri)?.name
+        val sameBase = hasSameBaseName(typName, pdfName)
+
         pdfUri = uri
         pdfPageCount = getPdfPageCount(context, uri)
         pdfPageIndex = 0
-        status = "已导入 PDF，共 ${pdfPageCount} 页"
+        status = if (sameBase) {
+            "已导入同名 PDF，共 $pdfPageCount 页"
+        } else {
+            "已导入 PDF（与 typ 文件名不同），共 $pdfPageCount 页"
+        }
     }
 
+    val headings = remember(typContent) { TypstOutlineParser.parse(typContent) }
+
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text("Typst Android 预览器（框架版）", style = MaterialTheme.typography.titleLarge)
+        Text("Typst Android 预览器（本地预览 MVP）", style = MaterialTheme.typography.titleLarge)
         Text(status)
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -99,6 +118,27 @@ private fun TypstPreviewScreen() {
             }
             Button(onClick = { pickPdf.launch(arrayOf("application/pdf")) }) {
                 Text("导入 PDF")
+            }
+            Button(onClick = { status = "编译功能占位：后续可接本地/远端 typst 编译" }) {
+                Text("编译（占位）")
+            }
+        }
+
+        Text("--- 文档目录（Typst 标题） ---")
+        if (headings.isEmpty()) {
+            Text("未解析到标题（提示：Typst 标题以 '=' 开头）")
+        } else {
+            LazyColumn(modifier = Modifier.heightIn(max = 150.dp)) {
+                items(headings) { heading ->
+                    val indent = (heading.level - 1).coerceAtLeast(0) * 12
+                    Text(
+                        text = "${" ".repeat(indent / 2)}• ${heading.title} (L${heading.lineNumber})",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { status = "定位提示：标题 ${heading.title} 在第 ${heading.lineNumber} 行" }
+                            .padding(vertical = 2.dp)
+                    )
+                }
             }
         }
 
@@ -115,7 +155,10 @@ private fun TypstPreviewScreen() {
 
         Text("--- PDF 预览（当前页） ---")
         if (pdfUri != null && pdfPageCount > 0) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Button(onClick = { if (pdfPageIndex > 0) pdfPageIndex-- }) { Text("上一页") }
                 Button(onClick = { if (pdfPageIndex < pdfPageCount - 1) pdfPageIndex++ }) { Text("下一页") }
                 Text("第 ${pdfPageIndex + 1} / $pdfPageCount 页")
@@ -129,7 +172,7 @@ private fun TypstPreviewScreen() {
 
 @Composable
 private fun PdfPageImage(uri: Uri, pageIndex: Int) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val bitmap = remember(uri, pageIndex) {
         renderPdfPage(context, uri, pageIndex)
     }
@@ -138,7 +181,9 @@ private fun PdfPageImage(uri: Uri, pageIndex: Int) {
         Image(
             bitmap = bitmap.asImageBitmap(),
             contentDescription = "PDF page",
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
         )
     } else {
         Text("PDF 渲染失败")
@@ -153,6 +198,11 @@ private fun readText(context: android.content.Context, uri: Uri): String {
     } catch (e: Exception) {
         "读取失败: ${e.message}"
     }
+}
+
+private fun hasSameBaseName(typName: String?, pdfName: String?): Boolean {
+    if (typName.isNullOrBlank() || pdfName.isNullOrBlank()) return false
+    return typName.substringBeforeLast(".") == pdfName.substringBeforeLast(".")
 }
 
 private fun isPdf(context: android.content.Context, uri: Uri): Boolean {
