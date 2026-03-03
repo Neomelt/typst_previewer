@@ -6,7 +6,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,17 +27,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
+import com.neomelt.typstpreview.ui.components.PdfPageImage
+import com.neomelt.typstpreview.ui.components.StatusBar
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -269,57 +267,3 @@ private fun TypstPreviewScreen() {
     }
 }
 
-@Composable
-private fun StatusBar(status: String) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = Color(0xFFEAF3FF),
-        tonalElevation = 1.dp
-    ) {
-        Text(
-            text = status,
-            modifier = Modifier.padding(10.dp),
-            style = MaterialTheme.typography.bodyMedium
-        )
-    }
-}
-
-@Composable
-private fun PdfPageImage(uri: Uri, pageIndex: Int, pageCount: Int) {
-    val context = LocalContext.current
-    val pageCache = remember(uri) { mutableStateMapOf<Int, PdfRenderResult>() }
-
-    val result = remember(uri, pageIndex) {
-        pageCache[pageIndex] ?: renderPdfPage(context, uri, pageIndex).also {
-            pageCache[pageIndex] = it
-        }
-    }
-
-    LaunchedEffect(uri, pageIndex, pageCount) {
-        val prev = pageIndex - 1
-        val next = pageIndex + 1
-
-        if (prev >= 0 && pageCache[prev] == null) {
-            pageCache[prev] = renderPdfPage(context, uri, prev)
-        }
-        if (next < pageCount && pageCache[next] == null) {
-            pageCache[next] = renderPdfPage(context, uri, next)
-        }
-    }
-
-    when (result) {
-        is PdfRenderResult.Success -> {
-            Image(
-                bitmap = result.bitmap.asImageBitmap(),
-                contentDescription = "PDF page",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
-            )
-        }
-
-        is PdfRenderResult.Error -> {
-            Text("PDF 渲染失败：${result.reason.message}")
-        }
-    }
-}
