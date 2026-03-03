@@ -37,6 +37,10 @@
 - Extracted UI components into dedicated modules:
   - `ui/components/StatusBar.kt`
   - `ui/components/PdfPageImage.kt`
+  - `ui/components/TopActionsBar.kt`
+  - `ui/components/OutlinePanel.kt`
+  - `ui/components/SourceViewer.kt`
+  - `ui/components/PdfPreviewPanel.kt`
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).
 

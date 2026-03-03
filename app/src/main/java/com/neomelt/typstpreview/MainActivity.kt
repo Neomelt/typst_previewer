@@ -6,20 +6,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -35,8 +26,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
+import com.neomelt.typstpreview.ui.components.OutlinePanel
 import com.neomelt.typstpreview.ui.components.PdfPageImage
+import com.neomelt.typstpreview.ui.components.PdfPreviewPanel
+import com.neomelt.typstpreview.ui.components.SourceViewer
 import com.neomelt.typstpreview.ui.components.StatusBar
+import com.neomelt.typstpreview.ui.components.TopActionsBar
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -177,93 +172,44 @@ private fun TypstPreviewScreen() {
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text("Typst Android 预览器（本地预览 MVP）", style = MaterialTheme.typography.titleLarge)
-
         StatusBar(status)
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { pickTyp.launch(arrayOf("text/*")) }) {
-                Text("导入 .typ")
-            }
-            Button(onClick = { pickPdf.launch(arrayOf("application/pdf")) }) {
-                Text(if (expectedPdfName == null) "导入 PDF" else "选择同名 PDF")
-            }
-            Button(onClick = { status = "编译功能占位：后续可接本地/远端 typst 编译" }) {
-                Text("编译（占位）")
-            }
-        }
+        TopActionsBar(
+            hasExpectedPdfName = expectedPdfName != null,
+            onPickTyp = { pickTyp.launch(arrayOf("text/*")) },
+            onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) },
+            onCompilePlaceholder = { status = "编译功能占位：后续可接本地/远端 typst 编译" }
+        )
 
         Text("当前 typ：${typName ?: "未选择"}")
         Text("当前 pdf：${pdfName ?: "未选择"}")
+        expectedPdfName?.let { Text("推荐文件名：$it") }
 
-        expectedPdfName?.let {
-            Text("推荐文件名：$it")
-        }
-
-        Text("--- 文档目录（Typst 标题） ---")
-        if (headings.isEmpty()) {
-            Text("未解析到标题（提示：Typst 标题以 '=' 开头）")
-        } else {
-            LazyColumn(modifier = Modifier.heightIn(max = 150.dp)) {
-                items(headings) { heading ->
-                    val indent = (heading.level - 1).coerceAtLeast(0) * 12
-                    Text(
-                        text = "${" ".repeat(indent / 2)}• ${heading.title} (L${heading.lineNumber})",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                val target = ((heading.lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
-                                scope.launch { typScrollState.animateScrollTo(target) }
-                                status = "已跳转到第 ${heading.lineNumber} 行附近"
-                            }
-                            .padding(vertical = 2.dp)
-                    )
-                }
+        OutlinePanel(
+            headings = headings,
+            onHeadingClick = { heading ->
+                val target = ((heading.lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
+                scope.launch { typScrollState.animateScrollTo(target) }
+                status = "已跳转到第 ${heading.lineNumber} 行附近"
             }
-        }
+        )
 
-        Text("--- Typst 源码 ---")
-        SelectionContainer {
-            Text(
-                text = typContent,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(typScrollState)
-            )
-        }
+        SourceViewer(content = typContent, scrollState = typScrollState)
 
-        Text("--- PDF 预览（当前页） ---")
-        if (pdfUri != null && pdfPageCount > 0) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Button(onClick = { if (pdfPageIndex > 0) pdfPageIndex-- }, enabled = pdfPageIndex > 0) {
-                    Text("上一页")
-                }
-                Button(
-                    onClick = { if (pdfPageIndex < pdfPageCount - 1) pdfPageIndex++ },
-                    enabled = pdfPageIndex < pdfPageCount - 1
-                ) {
-                    Text("下一页")
-                }
-                Button(onClick = {
-                    val exported = exportCurrentPageAsPng(context, pdfUri!!, pdfPageIndex)
-                    status = exported ?: "导出失败：请确认 PDF 可读"
-                }) {
-                    Text("导出当前页 PNG")
-                }
-                Text("第 ${pdfPageIndex + 1} / $pdfPageCount 页")
-            }
+        PdfPreviewPanel(
+            hasPdf = pdfUri != null && pdfPageCount > 0,
+            expectedPdfName = expectedPdfName,
+            pdfPageIndex = pdfPageIndex,
+            pdfPageCount = pdfPageCount,
+            onPrevPage = { if (pdfPageIndex > 0) pdfPageIndex-- },
+            onNextPage = { if (pdfPageIndex < pdfPageCount - 1) pdfPageIndex++ },
+            onExportCurrentPage = {
+                val exported = exportCurrentPageAsPng(context, pdfUri!!, pdfPageIndex)
+                status = exported ?: "导出失败：请确认 PDF 可读"
+            },
+            onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) }
+        ) {
             PdfPageImage(uri = pdfUri!!, pageIndex = pdfPageIndex, pageCount = pdfPageCount)
-        } else {
-            Text("尚未加载 PDF。先导入 .typ，再选择同名 PDF 进行预览。")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { pickPdf.launch(arrayOf("application/pdf")) }) {
-                    Text(if (expectedPdfName == null) "现在导入 PDF" else "导入 $expectedPdfName")
-                }
-            }
         }
     }
 }
-
