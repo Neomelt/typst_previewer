@@ -20,6 +20,11 @@
 - Ran: `./gradlew testDebugUnitTest`
 - Result: PASS
 
+### Known Issues
+- PDF is still manually selected; no automatic same-folder resolution yet.
+- Compile button is a placeholder only; no Typst compile pipeline is connected.
+- Current Typst display is plain text; syntax highlighting not implemented.
+
 ### Next
 1. Auto-bind same-name PDF from same folder (if URI permissions allow).
 2. Add basic Typst syntax highlighting in editor/reader area.
