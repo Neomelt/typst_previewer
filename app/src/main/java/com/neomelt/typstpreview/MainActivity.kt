@@ -45,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.launch
 import java.io.BufferedReader
+import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStreamReader
 
 private const val PREF_NAME = "typst_previewer_prefs"
@@ -121,8 +123,8 @@ private fun TypstPreviewScreen() {
             }
         }
 
-        if (typRestoreFailed || pdfRestoreFailed) {
-            status = "检测到历史文件权限或路径已失效，请手动重新导入文件"
+        buildRestoreStatusMessage(typRestoreFailed, pdfRestoreFailed)?.let {
+            status = it
         }
     }
 
@@ -261,6 +263,12 @@ private fun TypstPreviewScreen() {
                     enabled = pdfPageIndex < pdfPageCount - 1
                 ) {
                     Text("下一页")
+                }
+                Button(onClick = {
+                    val exported = exportCurrentPageAsPng(context, pdfUri!!, pdfPageIndex)
+                    status = exported ?: "导出失败：请确认 PDF 可读"
+                }) {
+                    Text("导出当前页 PNG")
                 }
                 Text("第 ${pdfPageIndex + 1} / $pdfPageCount 页")
             }
@@ -423,5 +431,31 @@ private fun renderPdfPage(context: android.content.Context, uri: Uri, pageIndex:
         page?.close()
         renderer?.close()
         pfd?.close()
+    }
+}
+
+internal fun buildRestoreStatusMessage(typRestoreFailed: Boolean, pdfRestoreFailed: Boolean): String? {
+    return when {
+        typRestoreFailed && pdfRestoreFailed -> "检测到历史 typ/pdf 权限或路径失效，请重新导入"
+        typRestoreFailed -> "检测到历史 typ 路径失效，请重新导入 .typ"
+        pdfRestoreFailed -> "检测到历史 PDF 路径失效，请重新导入 PDF"
+        else -> null
+    }
+}
+
+private fun exportCurrentPageAsPng(context: android.content.Context, uri: Uri, pageIndex: Int): String? {
+    val result = renderPdfPage(context, uri, pageIndex)
+    if (result !is PdfRenderResult.Success) return null
+
+    return try {
+        val dir = File(context.getExternalFilesDir(null), "exports")
+        if (!dir.exists()) dir.mkdirs()
+        val file = File(dir, "typst_page_${pageIndex + 1}.png")
+        FileOutputStream(file).use { out ->
+            result.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+        "已导出：${file.absolutePath}"
+    } catch (_: Exception) {
+        null
     }
 }

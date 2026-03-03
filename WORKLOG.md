@@ -31,6 +31,8 @@
   - Recover saved state on next app launch.
   - Validate saved URIs at startup; auto-clear invalid entries and prompt user to re-import.
 - Added PDF neighbor-page prefetch cache (current page +/- 1).
+- Added export action for current PDF page to PNG (saved under app external files export folder).
+- Added unit tests for restore-status messaging branches.
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).
 
