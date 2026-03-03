@@ -33,6 +33,7 @@
 - Added PDF neighbor-page prefetch cache (current page +/- 1).
 - Added export action for current PDF page to PNG (saved under app external files export folder).
 - Added unit tests for restore-status messaging branches.
+- Refactored `MainActivity` by extracting state/constants, file access helpers, and PDF utilities into dedicated files.
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).
 

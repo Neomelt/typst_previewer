@@ -1,11 +1,7 @@
 package com.neomelt.typstpreview
 
-import android.graphics.Bitmap
-import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Bundle
-import android.os.ParcelFileDescriptor
-import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -44,15 +40,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.launch
-import java.io.BufferedReader
-import java.io.File
-import java.io.FileOutputStream
-import java.io.InputStreamReader
-
-private const val PREF_NAME = "typst_previewer_prefs"
-private const val PREF_TYP_URI = "typ_uri"
-private const val PREF_PDF_URI = "pdf_uri"
-private const val PREF_PDF_PAGE = "pdf_page"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -227,9 +214,7 @@ private fun TypstPreviewScreen() {
                             .fillMaxWidth()
                             .clickable {
                                 val target = ((heading.lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
-                                scope.launch {
-                                    typScrollState.animateScrollTo(target)
-                                }
+                                scope.launch { typScrollState.animateScrollTo(target) }
                                 status = "已跳转到第 ${heading.lineNumber} 行附近"
                             }
                             .padding(vertical = 2.dp)
@@ -336,126 +321,5 @@ private fun PdfPageImage(uri: Uri, pageIndex: Int, pageCount: Int) {
         is PdfRenderResult.Error -> {
             Text("PDF 渲染失败：${result.reason.message}")
         }
-    }
-}
-
-private fun readText(context: android.content.Context, uri: Uri): String {
-    return try {
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            BufferedReader(InputStreamReader(input)).readText()
-        } ?: "读取失败"
-    } catch (e: Exception) {
-        "读取失败: ${e.message}"
-    }
-}
-
-private fun hasSameBaseName(typName: String?, pdfName: String?): Boolean {
-    if (typName.isNullOrBlank() || pdfName.isNullOrBlank()) return false
-    return typName.substringBeforeLast(".") == pdfName.substringBeforeLast(".")
-}
-
-private fun canReadUri(context: android.content.Context, uri: Uri): Boolean {
-    return try {
-        context.contentResolver.openInputStream(uri)?.use { stream ->
-            stream.read()
-        }
-        true
-    } catch (_: Exception) {
-        false
-    }
-}
-
-private fun grantReadPermissionSafely(context: android.content.Context, uri: Uri) {
-    try {
-        context.contentResolver.takePersistableUriPermission(
-            uri,
-            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-        )
-    } catch (_: Exception) {
-        // ignore non-persistable permission cases
-    }
-}
-
-private fun isPdf(context: android.content.Context, uri: Uri): Boolean {
-    val type = context.contentResolver.getType(uri)
-    if (type == "application/pdf") return true
-    val ext = MimeTypeMap.getFileExtensionFromUrl(uri.toString())
-    return ext.equals("pdf", true)
-}
-
-private fun getPdfPageCount(context: android.content.Context, uri: Uri): Int {
-    return try {
-        val pfd = context.contentResolver.openFileDescriptor(uri, "r") ?: return 0
-        PdfRenderer(pfd).use { it.pageCount }
-    } catch (_: Exception) {
-        0
-    }
-}
-
-private sealed interface PdfRenderResult {
-    data class Success(val bitmap: Bitmap) : PdfRenderResult
-    data class Error(val reason: PdfRenderError) : PdfRenderResult
-}
-
-private enum class PdfRenderError(val message: String) {
-    OPEN_FAILED("无法打开文件（可能无权限）"),
-    PAGE_OUT_OF_RANGE("页码超出范围"),
-    FILE_CORRUPTED("文件可能损坏"),
-    UNKNOWN("未知错误")
-}
-
-private fun renderPdfPage(context: android.content.Context, uri: Uri, pageIndex: Int): PdfRenderResult {
-    var pfd: ParcelFileDescriptor? = null
-    var renderer: PdfRenderer? = null
-    var page: PdfRenderer.Page? = null
-    return try {
-        pfd = context.contentResolver.openFileDescriptor(uri, "r")
-            ?: return PdfRenderResult.Error(PdfRenderError.OPEN_FAILED)
-        renderer = PdfRenderer(pfd)
-
-        if (pageIndex !in 0 until renderer.pageCount) {
-            return PdfRenderResult.Error(PdfRenderError.PAGE_OUT_OF_RANGE)
-        }
-
-        page = renderer.openPage(pageIndex)
-        val bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
-        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-        PdfRenderResult.Success(bitmap)
-    } catch (_: SecurityException) {
-        PdfRenderResult.Error(PdfRenderError.OPEN_FAILED)
-    } catch (_: IllegalStateException) {
-        PdfRenderResult.Error(PdfRenderError.FILE_CORRUPTED)
-    } catch (_: Exception) {
-        PdfRenderResult.Error(PdfRenderError.UNKNOWN)
-    } finally {
-        page?.close()
-        renderer?.close()
-        pfd?.close()
-    }
-}
-
-internal fun buildRestoreStatusMessage(typRestoreFailed: Boolean, pdfRestoreFailed: Boolean): String? {
-    return when {
-        typRestoreFailed && pdfRestoreFailed -> "检测到历史 typ/pdf 权限或路径失效，请重新导入"
-        typRestoreFailed -> "检测到历史 typ 路径失效，请重新导入 .typ"
-        pdfRestoreFailed -> "检测到历史 PDF 路径失效，请重新导入 PDF"
-        else -> null
-    }
-}
-
-private fun exportCurrentPageAsPng(context: android.content.Context, uri: Uri, pageIndex: Int): String? {
-    val result = renderPdfPage(context, uri, pageIndex)
-    if (result !is PdfRenderResult.Success) return null
-
-    return try {
-        val dir = File(context.getExternalFilesDir(null), "exports")
-        if (!dir.exists()) dir.mkdirs()
-        val file = File(dir, "typst_page_${pageIndex + 1}.png")
-        FileOutputStream(file).use { out ->
-            result.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-        }
-        "已导出：${file.absolutePath}"
-    } catch (_: Exception) {
-        null
     }
 }
