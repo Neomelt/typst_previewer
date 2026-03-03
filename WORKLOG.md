@@ -24,6 +24,7 @@
   - Dedicated status bar block
   - Current selected typ/pdf filename display
   - Prev/next page buttons now have disabled state at boundaries
+  - Empty preview state now includes direct import action and clear guidance text
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).
 

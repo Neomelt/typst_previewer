@@ -192,7 +192,12 @@ private fun TypstPreviewScreen() {
             }
             PdfPageImage(uri = pdfUri!!, pageIndex = pdfPageIndex)
         } else {
-            Text("尚未加载 PDF")
+            Text("尚未加载 PDF。先导入 .typ，再选择同名 PDF 进行预览。")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { pickPdf.launch(arrayOf("application/pdf")) }) {
+                    Text(if (expectedPdfName == null) "现在导入 PDF" else "导入 $expectedPdfName")
+                }
+            }
         }
     }
 }
