@@ -89,13 +89,21 @@ private fun TypstPreviewScreen() {
         val savedPdf = prefs.getString(PREF_PDF_URI, null)
         val savedPage = prefs.getInt(PREF_PDF_PAGE, 0)
 
+        var typRestoreFailed = false
+        var pdfRestoreFailed = false
+
         if (!savedTyp.isNullOrBlank()) {
             val uri = Uri.parse(savedTyp)
-            typUri = uri
-            typName = DocumentFile.fromSingleUri(context, uri)?.name
-            expectedPdfName = typName?.substringBeforeLast(".")?.plus(".pdf")
-            typContent = readText(context, uri)
-            status = "已恢复上次 Typst: ${typName ?: "unknown"}"
+            if (canReadUri(context, uri)) {
+                typUri = uri
+                typName = DocumentFile.fromSingleUri(context, uri)?.name
+                expectedPdfName = typName?.substringBeforeLast(".")?.plus(".pdf")
+                typContent = readText(context, uri)
+                status = "已恢复上次 Typst: ${typName ?: "unknown"}"
+            } else {
+                typRestoreFailed = true
+                prefs.edit().remove(PREF_TYP_URI).apply()
+            }
         }
 
         if (!savedPdf.isNullOrBlank()) {
@@ -107,7 +115,14 @@ private fun TypstPreviewScreen() {
                 pdfPageCount = count
                 pdfPageIndex = savedPage.coerceIn(0, count - 1)
                 status = "已恢复上次 PDF，共 $pdfPageCount 页"
+            } else {
+                pdfRestoreFailed = true
+                prefs.edit().remove(PREF_PDF_URI).remove(PREF_PDF_PAGE).apply()
             }
+        }
+
+        if (typRestoreFailed || pdfRestoreFailed) {
+            status = "检测到历史文件权限或路径已失效，请手动重新导入文件"
         }
     }
 
@@ -329,6 +344,17 @@ private fun readText(context: android.content.Context, uri: Uri): String {
 private fun hasSameBaseName(typName: String?, pdfName: String?): Boolean {
     if (typName.isNullOrBlank() || pdfName.isNullOrBlank()) return false
     return typName.substringBeforeLast(".") == pdfName.substringBeforeLast(".")
+}
+
+private fun canReadUri(context: android.content.Context, uri: Uri): Boolean {
+    return try {
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            stream.read()
+        }
+        true
+    } catch (_: Exception) {
+        false
+    }
 }
 
 private fun grantReadPermissionSafely(context: android.content.Context, uri: Uri) {

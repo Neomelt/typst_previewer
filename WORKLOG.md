@@ -29,6 +29,7 @@
 - Added restore-last-session behavior:
   - Persist typ URI, pdf URI, and last PDF page index.
   - Recover saved state on next app launch.
+  - Validate saved URIs at startup; auto-clear invalid entries and prompt user to re-import.
 - Added PDF neighbor-page prefetch cache (current page +/- 1).
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).
