@@ -159,14 +159,38 @@ private fun TypstPreviewScreen() {
             pdfPageIndex = 0
         }
 
-        status = if (expectedPdfName != null) {
-            if (hadPdfLoaded) {
-                "已导入 Typst: ${typName ?: "unknown"}，已清空旧 PDF，请选择同名文件：$expectedPdfName"
+        if (!compilerReady) {
+            status = if (expectedPdfName != null) {
+                "已导入 Typst: ${typName ?: "unknown"}。未检测到 typst 命令，请手动选择 PDF：$expectedPdfName"
             } else {
-                "已导入 Typst: ${typName ?: "unknown"}，建议选择同名 PDF：$expectedPdfName"
+                "已导入 Typst: ${typName ?: "unknown"}"
             }
-        } else {
-            "已导入 Typst: ${typName ?: "unknown"}"
+            return@rememberLauncherForActivityResult
+        }
+
+        scope.launch {
+            compiling = true
+            status = "已导入 Typst，正在自动渲染 PDF..."
+            when (val result = compiler.compile(context, uri)) {
+                is CompileResult.Success -> {
+                    val compiledUri = loadCompiledPdf(result.outputPdfFile)
+                    val pageCount = getPdfPageCount(context, compiledUri)
+                    if (pageCount > 0 && canReadPdfUri(context, compiledUri)) {
+                        pdfUri = compiledUri
+                        pdfName = result.outputPdfFile.name
+                        pdfPageCount = pageCount
+                        pdfPageIndex = 0
+                        status = "自动渲染成功，已加载 PDF（$pageCount 页）"
+                    } else {
+                        status = "自动渲染成功但加载 PDF 失败，请手动导入"
+                    }
+                }
+
+                is CompileResult.Failure -> {
+                    status = "自动渲染失败：${result.reason}"
+                }
+            }
+            compiling = false
         }
     }
 
