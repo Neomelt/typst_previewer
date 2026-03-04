@@ -45,6 +45,10 @@
   - keyword input panel (`ui/components/SearchPanel.kt`)
   - previous/next match navigation with source scroll jump
   - line-match helper (`TypstSearch.kt`) and unit test coverage (`TypstSearchTest.kt`)
+- Stabilized typ/pdf pairing flow:
+  - importing a new `.typ` now clears stale loaded PDF to avoid mismatched preview context
+  - export filenames now include timestamp suffix to avoid overwrite conflicts
+- Validation pass completed with `./gradlew testDebugUnitTest assembleDebug`.
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).
 

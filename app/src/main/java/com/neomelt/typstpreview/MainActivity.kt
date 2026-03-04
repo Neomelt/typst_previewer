@@ -123,13 +123,27 @@ private fun TypstPreviewScreen() {
         if (uri == null) return@rememberLauncherForActivityResult
         grantReadPermissionSafely(context, uri)
 
+        val hadPdfLoaded = pdfUri != null
+
         typUri = uri
         typName = DocumentFile.fromSingleUri(context, uri)?.name
         expectedPdfName = typName?.substringBeforeLast(".")?.plus(".pdf")
         typContent = readText(context, uri)
         currentMatchIndex = 0
+
+        if (hadPdfLoaded) {
+            pdfUri = null
+            pdfName = null
+            pdfPageCount = 0
+            pdfPageIndex = 0
+        }
+
         status = if (expectedPdfName != null) {
-            "已导入 Typst: ${typName ?: "unknown"}，建议选择同名 PDF：$expectedPdfName"
+            if (hadPdfLoaded) {
+                "已导入 Typst: ${typName ?: "unknown"}，已清空旧 PDF，请选择同名文件：$expectedPdfName"
+            } else {
+                "已导入 Typst: ${typName ?: "unknown"}，建议选择同名 PDF：$expectedPdfName"
+            }
         } else {
             "已导入 Typst: ${typName ?: "unknown"}"
         }

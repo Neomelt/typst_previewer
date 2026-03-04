@@ -7,6 +7,9 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import java.io.File
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 internal sealed interface PdfRenderResult {
     data class Success(val bitmap: Bitmap) : PdfRenderResult
@@ -66,7 +69,8 @@ internal fun exportCurrentPageAsPng(context: Context, uri: Uri, pageIndex: Int):
     return try {
         val dir = File(context.getExternalFilesDir(null), "exports")
         if (!dir.exists()) dir.mkdirs()
-        val file = File(dir, "typst_page_${pageIndex + 1}.png")
+        val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val file = File(dir, "typst_page_${pageIndex + 1}_$ts.png")
         FileOutputStream(file).use { out ->
             result.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
         }
