@@ -70,6 +70,7 @@
   - import typst executable into app-local `files/bin/typst`
   - persist executable path and use it for compile pipeline
 - Updated typ import behavior to auto-render PDF when Typst environment is ready.
+- Adjusted top action layout to a two-row structure to prevent button squeeze on narrow phone screens.
 - Validation pass completed with `./gradlew testDebugUnitTest assembleDebug`.
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).
