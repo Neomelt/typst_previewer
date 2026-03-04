@@ -29,6 +29,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.neomelt.typstpreview.ui.components.OutlinePanel
 import com.neomelt.typstpreview.ui.components.PdfPageImage
 import com.neomelt.typstpreview.ui.components.PdfPreviewPanel
+import com.neomelt.typstpreview.ui.components.SearchPanel
 import com.neomelt.typstpreview.ui.components.SourceViewer
 import com.neomelt.typstpreview.ui.components.StatusBar
 import com.neomelt.typstpreview.ui.components.TopActionsBar
@@ -65,6 +66,8 @@ private fun TypstPreviewScreen() {
     var pdfPageIndex by remember { mutableIntStateOf(0) }
 
     var status by remember { mutableStateOf("提示：先导入 .typ，再导入对应 PDF 预览") }
+    var searchQuery by remember { mutableStateOf("") }
+    var currentMatchIndex by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         val savedTyp = prefs.getString(PREF_TYP_URI, null)
@@ -124,6 +127,7 @@ private fun TypstPreviewScreen() {
         typName = DocumentFile.fromSingleUri(context, uri)?.name
         expectedPdfName = typName?.substringBeforeLast(".")?.plus(".pdf")
         typContent = readText(context, uri)
+        currentMatchIndex = 0
         status = if (expectedPdfName != null) {
             "已导入 Typst: ${typName ?: "unknown"}，建议选择同名 PDF：$expectedPdfName"
         } else {
@@ -164,6 +168,17 @@ private fun TypstPreviewScreen() {
     }
 
     val headings = remember(typContent) { TypstOutlineParser.parse(typContent) }
+    val searchMatches = remember(typContent, searchQuery) {
+        TypstSearch.findLineMatches(typContent, searchQuery)
+    }
+
+    LaunchedEffect(searchMatches) {
+        if (searchMatches.isEmpty()) {
+            currentMatchIndex = 0
+        } else {
+            currentMatchIndex = currentMatchIndex.coerceIn(0, searchMatches.size - 1)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -191,6 +206,34 @@ private fun TypstPreviewScreen() {
                 val target = ((heading.lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
                 scope.launch { typScrollState.animateScrollTo(target) }
                 status = "已跳转到第 ${heading.lineNumber} 行附近"
+            }
+        )
+
+        SearchPanel(
+            query = searchQuery,
+            matchCount = searchMatches.size,
+            currentMatchIndex = currentMatchIndex,
+            onQueryChange = {
+                searchQuery = it
+                currentMatchIndex = 0
+            },
+            onPrevMatch = {
+                if (searchMatches.isNotEmpty()) {
+                    currentMatchIndex = if (currentMatchIndex > 0) currentMatchIndex - 1 else searchMatches.size - 1
+                    val lineNumber = searchMatches[currentMatchIndex]
+                    val target = ((lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
+                    scope.launch { typScrollState.animateScrollTo(target) }
+                    status = "搜索命中：第 $lineNumber 行"
+                }
+            },
+            onNextMatch = {
+                if (searchMatches.isNotEmpty()) {
+                    currentMatchIndex = (currentMatchIndex + 1) % searchMatches.size
+                    val lineNumber = searchMatches[currentMatchIndex]
+                    val target = ((lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
+                    scope.launch { typScrollState.animateScrollTo(target) }
+                    status = "搜索命中：第 $lineNumber 行"
+                }
             }
         )
 

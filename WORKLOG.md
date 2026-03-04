@@ -41,6 +41,10 @@
   - `ui/components/OutlinePanel.kt`
   - `ui/components/SourceViewer.kt`
   - `ui/components/PdfPreviewPanel.kt`
+- Added Typst text search workflow:
+  - keyword input panel (`ui/components/SearchPanel.kt`)
+  - previous/next match navigation with source scroll jump
+  - line-match helper (`TypstSearch.kt`) and unit test coverage (`TypstSearchTest.kt`)
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).
 
