@@ -3,6 +3,7 @@ package com.neomelt.typstpreview
 import android.content.Context
 import android.net.Uri
 import android.webkit.MimeTypeMap
+import androidx.documentfile.provider.DocumentFile
 import java.io.BufferedReader
 import java.io.InputStreamReader
 
@@ -48,4 +49,14 @@ internal fun isPdf(context: Context, uri: Uri): Boolean {
     if (type == "application/pdf") return true
     val ext = MimeTypeMap.getFileExtensionFromUrl(uri.toString())
     return ext.equals("pdf", true)
+}
+
+internal fun isTypLikeFileName(fileName: String?): Boolean {
+    if (fileName.isNullOrBlank()) return false
+    val lower = fileName.lowercase()
+    return lower.endsWith(".typ") || lower.endsWith(".txt") || lower.endsWith(".md")
+}
+
+internal fun resolveDisplayName(context: Context, uri: Uri): String? {
+    return DocumentFile.fromSingleUri(context, uri)?.name
 }

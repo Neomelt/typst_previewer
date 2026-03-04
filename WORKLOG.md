@@ -45,6 +45,37 @@
   - keyword input panel (`ui/components/SearchPanel.kt`)
   - previous/next match navigation with source scroll jump
   - line-match helper (`TypstSearch.kt`) and unit test coverage (`TypstSearchTest.kt`)
+- Stabilized typ/pdf pairing flow:
+  - importing a new `.typ` now clears stale loaded PDF to avoid mismatched preview context
+  - export filenames now include timestamp suffix to avoid overwrite conflicts
+- Added pluggable compile workflow:
+  - compiler abstraction (`TypstCompiler`) and local command bridge (`LocalTypstCommandCompiler`)
+  - compile button now executes real compile flow, auto-loads generated PDF on success, and reports explicit failure reasons
+  - compiler availability check added (`typst --version`) with clear fallback prompt when command is missing
+- Improved local generated PDF compatibility (`file://`) for page counting/rendering.
+- Improved `.typ` import compatibility for QQ/files app workflows:
+  - typ picker now uses broad filter (`*/*`) so non-standard providers can be selected
+  - extension whitelist check (`.typ/.txt/.md`) with explicit user guidance for QQ downloads
+  - added filename utility tests
+- PNG export now writes directly to system gallery (`MediaStore`) under `Pictures/TypstPreviewer`.
+- Added export confirmation dialog: after successful export, user can choose whether to jump to gallery.
+- Added compatibility manifest permission for Android <= 9 write path.
+- Added local render-preview mode (基础渲染):
+  - source/render mode toggle
+  - Typst-to-block parser for heading/list/paragraph rendering
+  - render parser unit test coverage
+- Added Typst environment setup guide flow:
+  - setup dialog (detect/auto-config/import/clear)
+  - auto-config scans saved path, app-local binary, Termux path, and system command
+  - cloud-install flow: download typst package (bin/zip/tar.xz URL) and auto-install to app-local bin
+  - import typst executable into app-local `files/bin/typst`
+  - persist executable path and use it for compile pipeline
+- Updated typ import behavior to auto-render PDF when Typst environment is ready.
+- Added bottom navigation tabs (预览 / 环境 / 教程) and built-in Termux guide panel.
+- Added Termux mode (manual enable) with compile task dispatch + result refresh workflow.
+- Added default-link autofill for official Typst release download.
+- Adjusted top action layout to a two-row structure to prevent button squeeze on narrow phone screens.
+- Validation pass completed with `./gradlew testDebugUnitTest assembleDebug`.
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).
 

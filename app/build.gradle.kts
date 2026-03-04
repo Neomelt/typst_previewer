@@ -47,6 +47,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview:1.6.8")
     implementation("androidx.compose.material3:material3:1.2.1")
     implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.tukaani:xz:1.9")
 
     testImplementation("junit:junit:4.13.2")
 

@@ -1,7 +1,11 @@
 package com.neomelt.typstpreview
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
+import java.io.File
+import java.io.FileOutputStream
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -11,9 +15,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,11 +38,17 @@ import androidx.documentfile.provider.DocumentFile
 import com.neomelt.typstpreview.ui.components.OutlinePanel
 import com.neomelt.typstpreview.ui.components.PdfPageImage
 import com.neomelt.typstpreview.ui.components.PdfPreviewPanel
+import com.neomelt.typstpreview.ui.components.RenderModeToggle
+import com.neomelt.typstpreview.ui.components.RenderedPreview
 import com.neomelt.typstpreview.ui.components.SearchPanel
 import com.neomelt.typstpreview.ui.components.SourceViewer
 import com.neomelt.typstpreview.ui.components.StatusBar
 import com.neomelt.typstpreview.ui.components.TopActionsBar
+import com.neomelt.typstpreview.ui.components.TermuxGuidePanel
+import com.neomelt.typstpreview.ui.components.TypstSetupDialog
 import kotlinx.coroutines.launch
+
+private enum class AppTab { PREVIEW, ENV, GUIDE }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,10 +81,32 @@ private fun TypstPreviewScreen() {
     var pdfPageIndex by remember { mutableIntStateOf(0) }
 
     var status by remember { mutableStateOf("提示：先导入 .typ，再导入对应 PDF 预览") }
+    var compilerReady by remember { mutableStateOf(false) }
+    var typstCommandPath by remember { mutableStateOf<String?>(null) }
+    var typstDownloadUrl by remember { mutableStateOf("") }
+    var setupDialogVisible by remember { mutableStateOf(false) }
+    var setupStatus by remember { mutableStateOf("未检测") }
+    var compiling by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var currentMatchIndex by remember { mutableIntStateOf(0) }
+    var renderMode by remember { mutableStateOf(false) }
+    var activeTab by remember { mutableStateOf(AppTab.PREVIEW) }
+    var exportedImage by remember { mutableStateOf<ExportedImage?>(null) }
+    val termuxWorkDir = remember {
+        File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "TypstPreviewer")
+    }
 
     LaunchedEffect(Unit) {
+        typstCommandPath = prefs.getString(PREF_TYPST_CMD, null)
+        typstDownloadUrl = prefs.getString(PREF_TYPST_URL, "") ?: ""
+
+        val env = detectTypstEnvironment(typstCommandPath)
+        compilerReady = env.available
+        setupStatus = env.detail
+        if (!compilerReady) {
+            status = "未检测到 typst 命令：可继续手动导入 PDF 预览"
+        }
+
         val savedTyp = prefs.getString(PREF_TYP_URI, null)
         val savedPdf = prefs.getString(PREF_PDF_URI, null)
         val savedPage = prefs.getInt(PREF_PDF_PAGE, 0)
@@ -119,19 +156,91 @@ private fun TypstPreviewScreen() {
             .apply()
     }
 
+    val pickTypstBinary = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        grantReadPermissionSafely(context, uri)
+
+        val installResult = installTypstBinaryFromUri(context, uri)
+        if (installResult.isSuccess) {
+            typstCommandPath = installResult.getOrNull()
+            prefs.edit().putString(PREF_TYPST_CMD, typstCommandPath).apply()
+            scope.launch {
+                val env = detectTypstEnvironment(typstCommandPath)
+                compilerReady = env.available
+                setupStatus = env.detail
+                status = if (env.available) "Typst 环境配置成功" else "导入成功但环境检测失败"
+            }
+        } else {
+            status = "导入 Typst 可执行文件失败：${installResult.exceptionOrNull()?.message}"
+        }
+    }
+
     val pickTyp = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         grantReadPermissionSafely(context, uri)
 
+        val selectedName = resolveDisplayName(context, uri)
+        if (!isTypLikeFileName(selectedName)) {
+            status = "导入失败：请选择 .typ/.txt/.md 文件（QQ 文件请先下载完成并复制到 Download）"
+            return@rememberLauncherForActivityResult
+        }
+
+        val hadPdfLoaded = pdfUri != null
+
         typUri = uri
-        typName = DocumentFile.fromSingleUri(context, uri)?.name
+        typName = selectedName
         expectedPdfName = typName?.substringBeforeLast(".")?.plus(".pdf")
         typContent = readText(context, uri)
         currentMatchIndex = 0
-        status = if (expectedPdfName != null) {
-            "已导入 Typst: ${typName ?: "unknown"}，建议选择同名 PDF：$expectedPdfName"
-        } else {
-            "已导入 Typst: ${typName ?: "unknown"}"
+
+        if (hadPdfLoaded) {
+            pdfUri = null
+            pdfName = null
+            pdfPageCount = 0
+            pdfPageIndex = 0
+        }
+
+        if (!compilerReady) {
+            status = if (expectedPdfName != null) {
+                "已导入 Typst: ${typName ?: "unknown"}。未检测到 typst 命令，请手动选择 PDF：$expectedPdfName"
+            } else {
+                "已导入 Typst: ${typName ?: "unknown"}"
+            }
+            return@rememberLauncherForActivityResult
+        }
+
+        scope.launch {
+            compiling = true
+            status = "已导入 Typst，正在自动渲染 PDF..."
+
+            if (typstCommandPath == TERMUX_MODE) {
+                val commandResult = runTermuxCompileCommand(context, uri, termuxWorkDir)
+                status = commandResult
+                compiling = false
+                return@launch
+            }
+
+            val activeCompiler = LocalTypstCommandCompiler(typstCommandPath ?: "typst")
+            when (val result = activeCompiler.compile(context, uri)) {
+                is CompileResult.Success -> {
+                    val compiledUri = loadCompiledPdf(result.outputPdfFile)
+                    val pageCount = getPdfPageCount(context, compiledUri)
+                    if (pageCount > 0 && canReadPdfUri(context, compiledUri)) {
+                        pdfUri = compiledUri
+                        pdfName = result.outputPdfFile.name
+                        pdfPageCount = pageCount
+                        pdfPageIndex = 0
+                        status = "自动渲染成功，已加载 PDF（$pageCount 页）"
+                    } else {
+                        status = "自动渲染成功但加载 PDF 失败，请手动导入"
+                    }
+                }
+
+                is CompileResult.Failure -> {
+                    status = "自动渲染失败：${result.reason}"
+                }
+            }
+            compiling = false
         }
     }
 
@@ -168,6 +277,7 @@ private fun TypstPreviewScreen() {
     }
 
     val headings = remember(typContent) { TypstOutlineParser.parse(typContent) }
+    val renderBlocks = remember(typContent) { TypstRenderParser.parse(typContent) }
     val searchMatches = remember(typContent, searchQuery) {
         TypstSearch.findLineMatches(typContent, searchQuery)
     }
@@ -180,79 +290,326 @@ private fun TypstPreviewScreen() {
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(selected = activeTab == AppTab.PREVIEW, onClick = { activeTab = AppTab.PREVIEW }, label = { Text("预览") }, icon = {})
+                NavigationBarItem(selected = activeTab == AppTab.ENV, onClick = { activeTab = AppTab.ENV }, label = { Text("环境") }, icon = {})
+                NavigationBarItem(selected = activeTab == AppTab.GUIDE, onClick = { activeTab = AppTab.GUIDE }, label = { Text("教程") }, icon = {})
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
         Text("Typst Android 预览器（本地预览 MVP）", style = MaterialTheme.typography.titleLarge)
         StatusBar(status)
 
         TopActionsBar(
             hasExpectedPdfName = expectedPdfName != null,
-            onPickTyp = { pickTyp.launch(arrayOf("text/*")) },
+            compiling = compiling,
+            hasTypLoaded = typUri != null,
+            compilerReady = compilerReady,
+            onPickTyp = { pickTyp.launch(arrayOf("*/*")) },
             onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) },
-            onCompilePlaceholder = { status = "编译功能占位：后续可接本地/远端 typst 编译" }
-        )
+            onSetup = { setupDialogVisible = true },
+            onCompile = {
+                val sourceUri = typUri
+                if (!compilerReady) {
+                    status = "当前设备未安装 typst 命令，无法本地编译"
+                } else if (sourceUri == null) {
+                    status = "请先导入 .typ 文件"
+                } else {
+                    scope.launch {
+                        compiling = true
+                        status = "正在编译 Typst..."
 
-        Text("当前 typ：${typName ?: "未选择"}")
-        Text("当前 pdf：${pdfName ?: "未选择"}")
-        expectedPdfName?.let { Text("推荐文件名：$it") }
+                        if (typstCommandPath == TERMUX_MODE) {
+                            status = runTermuxCompileCommand(context, sourceUri, termuxWorkDir)
+                            compiling = false
+                            return@launch
+                        }
 
-        OutlinePanel(
-            headings = headings,
-            onHeadingClick = { heading ->
-                val target = ((heading.lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
-                scope.launch { typScrollState.animateScrollTo(target) }
-                status = "已跳转到第 ${heading.lineNumber} 行附近"
+                        val activeCompiler = LocalTypstCommandCompiler(typstCommandPath ?: "typst")
+                        when (val result = activeCompiler.compile(context, sourceUri)) {
+                            is CompileResult.Success -> {
+                                val compiledUri = loadCompiledPdf(result.outputPdfFile)
+                                val pageCount = getPdfPageCount(context, compiledUri)
+                                if (pageCount > 0 && canReadPdfUri(context, compiledUri)) {
+                                    pdfUri = compiledUri
+                                    pdfName = result.outputPdfFile.name
+                                    pdfPageCount = pageCount
+                                    pdfPageIndex = 0
+                                    status = "编译成功，已加载生成的 PDF（$pageCount 页）"
+                                } else {
+                                    status = "编译成功但加载 PDF 失败，请手动导入"
+                                }
+                            }
+
+                            is CompileResult.Failure -> {
+                                status = result.reason
+                            }
+                        }
+                        compiling = false
+                    }
+                }
             }
         )
 
-        SearchPanel(
-            query = searchQuery,
-            matchCount = searchMatches.size,
-            currentMatchIndex = currentMatchIndex,
-            onQueryChange = {
-                searchQuery = it
-                currentMatchIndex = 0
-            },
-            onPrevMatch = {
-                if (searchMatches.isNotEmpty()) {
-                    currentMatchIndex = if (currentMatchIndex > 0) currentMatchIndex - 1 else searchMatches.size - 1
-                    val lineNumber = searchMatches[currentMatchIndex]
-                    val target = ((lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
-                    scope.launch { typScrollState.animateScrollTo(target) }
-                    status = "搜索命中：第 $lineNumber 行"
+        when (activeTab) {
+            AppTab.PREVIEW -> {
+                Text("当前 typ：${typName ?: "未选择"}")
+                Text("当前 pdf：${pdfName ?: "未选择"}")
+                expectedPdfName?.let { Text("推荐文件名：$it") }
+
+                OutlinePanel(
+                    headings = headings,
+                    onHeadingClick = { heading ->
+                        val target = ((heading.lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
+                        scope.launch { typScrollState.animateScrollTo(target) }
+                        status = "已跳转到第 ${heading.lineNumber} 行附近"
+                    }
+                )
+
+                SearchPanel(
+                    query = searchQuery,
+                    matchCount = searchMatches.size,
+                    currentMatchIndex = currentMatchIndex,
+                    onQueryChange = {
+                        searchQuery = it
+                        currentMatchIndex = 0
+                    },
+                    onPrevMatch = {
+                        if (searchMatches.isNotEmpty()) {
+                            currentMatchIndex = if (currentMatchIndex > 0) currentMatchIndex - 1 else searchMatches.size - 1
+                            val lineNumber = searchMatches[currentMatchIndex]
+                            val target = ((lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
+                            scope.launch { typScrollState.animateScrollTo(target) }
+                            status = "搜索命中：第 $lineNumber 行"
+                        }
+                    },
+                    onNextMatch = {
+                        if (searchMatches.isNotEmpty()) {
+                            currentMatchIndex = (currentMatchIndex + 1) % searchMatches.size
+                            val lineNumber = searchMatches[currentMatchIndex]
+                            val target = ((lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
+                            scope.launch { typScrollState.animateScrollTo(target) }
+                            status = "搜索命中：第 $lineNumber 行"
+                        }
+                    }
+                )
+
+                RenderModeToggle(
+                    renderMode = renderMode,
+                    onSourceMode = { renderMode = false },
+                    onRenderMode = { renderMode = true }
+                )
+
+                if (renderMode) {
+                    RenderedPreview(blocks = renderBlocks, scrollState = typScrollState)
+                } else {
+                    SourceViewer(content = typContent, scrollState = typScrollState)
                 }
-            },
-            onNextMatch = {
-                if (searchMatches.isNotEmpty()) {
-                    currentMatchIndex = (currentMatchIndex + 1) % searchMatches.size
-                    val lineNumber = searchMatches[currentMatchIndex]
-                    val target = ((lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
-                    scope.launch { typScrollState.animateScrollTo(target) }
-                    status = "搜索命中：第 $lineNumber 行"
+
+                PdfPreviewPanel(
+                    hasPdf = pdfUri != null && pdfPageCount > 0,
+                    expectedPdfName = expectedPdfName,
+                    pdfPageIndex = pdfPageIndex,
+                    pdfPageCount = pdfPageCount,
+                    onPrevPage = { if (pdfPageIndex > 0) pdfPageIndex-- },
+                    onNextPage = { if (pdfPageIndex < pdfPageCount - 1) pdfPageIndex++ },
+                    onExportCurrentPage = {
+                        val exported = exportCurrentPageAsPng(context, pdfUri!!, pdfPageIndex)
+                        if (exported != null) {
+                            exportedImage = exported
+                            status = "已导出到相册：${exported.displayName}"
+                        } else {
+                            status = "导出失败：请确认 PDF 可读"
+                        }
+                    },
+                    onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) }
+                ) {
+                    PdfPageImage(uri = pdfUri!!, pageIndex = pdfPageIndex, pageCount = pdfPageCount)
                 }
             }
-        )
 
-        SourceViewer(content = typContent, scrollState = typScrollState)
+            AppTab.ENV -> {
+                Text("环境状态：$setupStatus")
+                Text("当前命令：${typstCommandPath ?: "未配置"}")
+                Text("下载链接：${if (typstDownloadUrl.isBlank()) "未设置" else typstDownloadUrl}")
+                Text("点上方“环境配置”进入完整向导")
+                TextButton(onClick = {
+                    val loaded = loadTermuxCompiledPdf(context, termuxWorkDir)
+                    if (loaded != null) {
+                        pdfUri = loaded.first
+                        pdfName = loaded.second
+                        pdfPageCount = loaded.third
+                        pdfPageIndex = 0
+                        status = "已加载 Termux 编译结果（${loaded.third} 页）"
+                    } else {
+                        status = "未找到 Termux 编译结果，请先在 Termux 中完成编译"
+                    }
+                }) {
+                    Text("刷新 Termux 编译结果")
+                }
+            }
 
-        PdfPreviewPanel(
-            hasPdf = pdfUri != null && pdfPageCount > 0,
-            expectedPdfName = expectedPdfName,
-            pdfPageIndex = pdfPageIndex,
-            pdfPageCount = pdfPageCount,
-            onPrevPage = { if (pdfPageIndex > 0) pdfPageIndex-- },
-            onNextPage = { if (pdfPageIndex < pdfPageCount - 1) pdfPageIndex++ },
-            onExportCurrentPage = {
-                val exported = exportCurrentPageAsPng(context, pdfUri!!, pdfPageIndex)
-                status = exported ?: "导出失败：请确认 PDF 可读"
-            },
-            onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) }
-        ) {
-            PdfPageImage(uri = pdfUri!!, pageIndex = pdfPageIndex, pageCount = pdfPageCount)
+            AppTab.GUIDE -> {
+                TermuxGuidePanel()
+            }
+        }
+
         }
     }
+
+    if (setupDialogVisible) {
+        TypstSetupDialog(
+            statusText = setupStatus,
+            abiText = preferredAbi(),
+            downloadUrl = typstDownloadUrl,
+            onDownloadUrlChange = {
+                typstDownloadUrl = it
+                prefs.edit().putString(PREF_TYPST_URL, it).apply()
+            },
+            onUseDefaultUrl = {
+                val url = defaultTypstDownloadUrl(preferredAbi())
+                typstDownloadUrl = url
+                prefs.edit().putString(PREF_TYPST_URL, url).apply()
+                status = "已填入默认下载链接"
+            },
+            onDismiss = { setupDialogVisible = false },
+            onDetect = {
+                scope.launch {
+                    val env = detectTypstEnvironment(typstCommandPath)
+                    compilerReady = env.available
+                    setupStatus = env.detail
+                    status = if (env.available) "Typst 环境检测通过" else "Typst 环境不可用"
+                }
+            },
+            onAutoConfigure = {
+                scope.launch {
+                    val result = autoConfigureTypst(context, typstCommandPath)
+                    compilerReady = result.available
+                    setupStatus = result.detail
+                    if (result.available && !result.command.isNullOrBlank()) {
+                        typstCommandPath = result.command
+                        prefs.edit().putString(PREF_TYPST_CMD, result.command).apply()
+                        status = "Typst 自动配置完成"
+                    } else {
+                        status = result.detail
+                    }
+                }
+            },
+            onEnableTermuxMode = {
+                typstCommandPath = TERMUX_MODE
+                prefs.edit().putString(PREF_TYPST_CMD, TERMUX_MODE).apply()
+                compilerReady = true
+                setupStatus = "已启用 Termux 模式"
+                status = "Termux 模式已启用：导入 typ 后会发起 Termux 编译"
+            },
+            onInstallFromUrl = {
+                scope.launch {
+                    val url = typstDownloadUrl.trim()
+                    if (url.isBlank()) {
+                        status = "请先填写下载链接"
+                        return@launch
+                    }
+                    setupStatus = "正在下载并安装..."
+                    val install = installTypstFromUrl(context, url)
+                    if (install.isSuccess) {
+                        typstCommandPath = install.getOrNull()
+                        prefs.edit().putString(PREF_TYPST_CMD, typstCommandPath).apply()
+                        val env = detectTypstEnvironment(typstCommandPath)
+                        compilerReady = env.available
+                        setupStatus = env.detail
+                        status = if (env.available) "云端安装并配置成功" else "安装完成，但检测失败"
+                    } else {
+                        setupStatus = "云端安装失败"
+                        status = "云端安装失败：${install.exceptionOrNull()?.message}"
+                    }
+                }
+            },
+            onImportBinary = { pickTypstBinary.launch(arrayOf("*/*")) },
+            onClearConfig = {
+                typstCommandPath = null
+                prefs.edit().remove(PREF_TYPST_CMD).apply()
+                compilerReady = false
+                setupStatus = "已清除本地 Typst 配置"
+                status = "已清除 Typst 配置，请重新导入可执行文件"
+            }
+        )
+    }
+
+    exportedImage?.let { image ->
+        AlertDialog(
+            onDismissRequest = { exportedImage = null },
+            title = { Text("已导出到相册") },
+            text = { Text("${image.displayName}\n现在打开相册查看吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(image.uri, "image/*")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    val launched = runCatching { context.startActivity(intent) }.isSuccess
+                    if (!launched) {
+                        status = "无法直接打开相册，请手动在系统相册查看"
+                    }
+                    exportedImage = null
+                }) {
+                    Text("打开")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { exportedImage = null }) {
+                    Text("暂不")
+                }
+            }
+        )
+    }
+}
+
+private fun runTermuxCompileCommand(context: android.content.Context, sourceUri: Uri, workDir: File): String {
+    return runCatching {
+        workDir.mkdirs()
+        val inputFile = File(workDir, "input.typ")
+        val outputFile = File(workDir, "output.pdf")
+
+        context.contentResolver.openInputStream(sourceUri)?.use { input ->
+            FileOutputStream(inputFile).use { output -> input.copyTo(output) }
+        } ?: error("无法读取 .typ 文件")
+
+        val command = "/data/data/com.termux/files/usr/bin/typst compile ${inputFile.absolutePath} ${outputFile.absolutePath}"
+
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            `package` = "com.termux"
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/sh")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", command))
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+
+        val launched = runCatching { context.startService(intent) }.isSuccess
+
+        if (!launched) {
+            return "无法调用 Termux，请确认已安装 Termux 与 Termux:API"
+        }
+
+        "已发送编译任务到 Termux，完成后到“环境”页点“刷新 Termux 编译结果”"
+    }.getOrElse { "Termux 编译任务发送失败：${it.message}" }
+}
+
+private fun loadTermuxCompiledPdf(
+    context: android.content.Context,
+    workDir: File
+): Triple<Uri, String, Int>? {
+    val outputFile = File(workDir, "output.pdf")
+    if (!outputFile.exists() || outputFile.length() <= 0L) return null
+    val uri = Uri.fromFile(outputFile)
+    val pageCount = getPdfPageCount(context, uri)
+    if (pageCount <= 0) return null
+    return Triple(uri, outputFile.name, pageCount)
 }

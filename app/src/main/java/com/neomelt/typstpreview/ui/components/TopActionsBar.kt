@@ -1,6 +1,7 @@
 package com.neomelt.typstpreview.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -10,19 +11,31 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun TopActionsBar(
     hasExpectedPdfName: Boolean,
+    compiling: Boolean,
+    hasTypLoaded: Boolean,
+    compilerReady: Boolean,
     onPickTyp: () -> Unit,
     onPickPdf: () -> Unit,
-    onCompilePlaceholder: () -> Unit
+    onCompile: () -> Unit,
+    onSetup: () -> Unit
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = onPickTyp) {
-            Text("导入 .typ")
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onPickTyp, enabled = !compiling) {
+                Text("导入 .typ")
+            }
+            Button(onClick = onPickPdf, enabled = !compiling) {
+                Text(if (hasExpectedPdfName) "选择同名 PDF" else "导入 PDF")
+            }
         }
-        Button(onClick = onPickPdf) {
-            Text(if (hasExpectedPdfName) "选择同名 PDF" else "导入 PDF")
-        }
-        Button(onClick = onCompilePlaceholder) {
-            Text("编译（占位）")
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onCompile, enabled = hasTypLoaded && compilerReady && !compiling) {
+                Text(if (compiling) "编译中..." else "编译")
+            }
+            Button(onClick = onSetup, enabled = !compiling) {
+                Text("环境配置")
+            }
         }
     }
 }
