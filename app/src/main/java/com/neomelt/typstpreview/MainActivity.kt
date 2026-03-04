@@ -54,6 +54,7 @@ private fun TypstPreviewScreen() {
     val scope = rememberCoroutineScope()
     val typScrollState = rememberScrollState()
     val prefs = remember { context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE) }
+    val compiler = remember { LocalTypstCommandCompiler() }
 
     var typUri by remember { mutableStateOf<Uri?>(null) }
     var typContent by remember { mutableStateOf("还未导入 .typ 文件") }
@@ -66,6 +67,7 @@ private fun TypstPreviewScreen() {
     var pdfPageIndex by remember { mutableIntStateOf(0) }
 
     var status by remember { mutableStateOf("提示：先导入 .typ，再导入对应 PDF 预览") }
+    var compiling by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var currentMatchIndex by remember { mutableIntStateOf(0) }
 
@@ -205,9 +207,41 @@ private fun TypstPreviewScreen() {
 
         TopActionsBar(
             hasExpectedPdfName = expectedPdfName != null,
+            compiling = compiling,
+            hasTypLoaded = typUri != null,
             onPickTyp = { pickTyp.launch(arrayOf("text/*")) },
             onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) },
-            onCompilePlaceholder = { status = "编译功能占位：后续可接本地/远端 typst 编译" }
+            onCompile = {
+                val sourceUri = typUri
+                if (sourceUri == null) {
+                    status = "请先导入 .typ 文件"
+                } else {
+                    scope.launch {
+                        compiling = true
+                        status = "正在编译 Typst..."
+                        when (val result = compiler.compile(context, sourceUri)) {
+                            is CompileResult.Success -> {
+                                val compiledUri = loadCompiledPdf(result.outputPdfFile)
+                                val pageCount = getPdfPageCount(context, compiledUri)
+                                if (pageCount > 0 && canReadPdfUri(context, compiledUri)) {
+                                    pdfUri = compiledUri
+                                    pdfName = result.outputPdfFile.name
+                                    pdfPageCount = pageCount
+                                    pdfPageIndex = 0
+                                    status = "编译成功，已加载生成的 PDF（$pageCount 页）"
+                                } else {
+                                    status = "编译成功但加载 PDF 失败，请手动导入"
+                                }
+                            }
+
+                            is CompileResult.Failure -> {
+                                status = result.reason
+                            }
+                        }
+                        compiling = false
+                    }
+                }
+            }
         )
 
         Text("当前 typ：${typName ?: "未选择"}")
