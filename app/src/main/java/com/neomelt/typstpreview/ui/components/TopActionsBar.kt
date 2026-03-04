@@ -12,6 +12,7 @@ internal fun TopActionsBar(
     hasExpectedPdfName: Boolean,
     compiling: Boolean,
     hasTypLoaded: Boolean,
+    compilerReady: Boolean,
     onPickTyp: () -> Unit,
     onPickPdf: () -> Unit,
     onCompile: () -> Unit
@@ -23,7 +24,7 @@ internal fun TopActionsBar(
         Button(onClick = onPickPdf, enabled = !compiling) {
             Text(if (hasExpectedPdfName) "选择同名 PDF" else "导入 PDF")
         }
-        Button(onClick = onCompile, enabled = hasTypLoaded && !compiling) {
+        Button(onClick = onCompile, enabled = hasTypLoaded && compilerReady && !compiling) {
             Text(if (compiling) "编译中..." else "编译")
         }
     }

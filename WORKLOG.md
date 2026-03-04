@@ -51,7 +51,9 @@
 - Added pluggable compile workflow:
   - compiler abstraction (`TypstCompiler`) and local command bridge (`LocalTypstCommandCompiler`)
   - compile button now executes real compile flow, auto-loads generated PDF on success, and reports explicit failure reasons
-- Validation pass completed with `./gradlew testDebugUnitTest` and `./gradlew assembleDebug`.
+  - compiler availability check added (`typst --version`) with clear fallback prompt when command is missing
+- Improved local generated PDF compatibility (`file://`) for page counting/rendering.
+- Validation pass completed with `./gradlew testDebugUnitTest assembleDebug`.
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).
 

@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal interface TypstCompiler {
+    suspend fun isAvailable(): Boolean
     suspend fun compile(context: Context, inputUri: Uri): CompileResult
 }
 
@@ -21,6 +22,18 @@ internal sealed interface CompileResult {
 internal class LocalTypstCommandCompiler(
     private val command: String = "typst"
 ) : TypstCompiler {
+    override suspend fun isAvailable(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val process = ProcessBuilder(command, "--version")
+                .redirectErrorStream(true)
+                .start()
+            val finished = process.waitFor(5, TimeUnit.SECONDS)
+            finished && process.exitValue() == 0
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     override suspend fun compile(context: Context, inputUri: Uri): CompileResult = withContext(Dispatchers.IO) {
         val workDir = File(context.cacheDir, "typst-compile").apply { mkdirs() }
         val inputFile = File(workDir, "input.typ")

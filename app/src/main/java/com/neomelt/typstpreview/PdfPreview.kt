@@ -25,7 +25,13 @@ internal enum class PdfRenderError(val message: String) {
 
 internal fun getPdfPageCount(context: Context, uri: Uri): Int {
     return try {
-        val pfd = context.contentResolver.openFileDescriptor(uri, "r") ?: return 0
+        val pfd = if (uri.scheme == "file") {
+            val path = uri.path ?: return 0
+            ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY)
+        } else {
+            context.contentResolver.openFileDescriptor(uri, "r")
+        } ?: return 0
+
         PdfRenderer(pfd).use { it.pageCount }
     } catch (_: Exception) {
         0
@@ -37,8 +43,12 @@ internal fun renderPdfPage(context: Context, uri: Uri, pageIndex: Int): PdfRende
     var renderer: PdfRenderer? = null
     var page: PdfRenderer.Page? = null
     return try {
-        pfd = context.contentResolver.openFileDescriptor(uri, "r")
-            ?: return PdfRenderResult.Error(PdfRenderError.OPEN_FAILED)
+        pfd = if (uri.scheme == "file") {
+            val path = uri.path ?: return PdfRenderResult.Error(PdfRenderError.OPEN_FAILED)
+            ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY)
+        } else {
+            context.contentResolver.openFileDescriptor(uri, "r")
+        } ?: return PdfRenderResult.Error(PdfRenderError.OPEN_FAILED)
         renderer = PdfRenderer(pfd)
 
         if (pageIndex !in 0 until renderer.pageCount) {

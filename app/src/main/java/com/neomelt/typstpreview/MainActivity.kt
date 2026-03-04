@@ -67,11 +67,17 @@ private fun TypstPreviewScreen() {
     var pdfPageIndex by remember { mutableIntStateOf(0) }
 
     var status by remember { mutableStateOf("提示：先导入 .typ，再导入对应 PDF 预览") }
+    var compilerReady by remember { mutableStateOf(false) }
     var compiling by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var currentMatchIndex by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
+        compilerReady = compiler.isAvailable()
+        if (!compilerReady) {
+            status = "未检测到 typst 命令：可继续手动导入 PDF 预览"
+        }
+
         val savedTyp = prefs.getString(PREF_TYP_URI, null)
         val savedPdf = prefs.getString(PREF_PDF_URI, null)
         val savedPage = prefs.getInt(PREF_PDF_PAGE, 0)
@@ -209,11 +215,14 @@ private fun TypstPreviewScreen() {
             hasExpectedPdfName = expectedPdfName != null,
             compiling = compiling,
             hasTypLoaded = typUri != null,
+            compilerReady = compilerReady,
             onPickTyp = { pickTyp.launch(arrayOf("text/*")) },
             onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) },
             onCompile = {
                 val sourceUri = typUri
-                if (sourceUri == null) {
+                if (!compilerReady) {
+                    status = "当前设备未安装 typst 命令，无法本地编译"
+                } else if (sourceUri == null) {
                     status = "请先导入 .typ 文件"
                 } else {
                     scope.launch {
