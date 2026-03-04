@@ -53,6 +53,10 @@
   - compile button now executes real compile flow, auto-loads generated PDF on success, and reports explicit failure reasons
   - compiler availability check added (`typst --version`) with clear fallback prompt when command is missing
 - Improved local generated PDF compatibility (`file://`) for page counting/rendering.
+- Improved `.typ` import compatibility for QQ/files app workflows:
+  - typ picker now uses broad filter (`*/*`) so non-standard providers can be selected
+  - extension whitelist check (`.typ/.txt/.md`) with explicit user guidance for QQ downloads
+  - added filename utility tests
 - Validation pass completed with `./gradlew testDebugUnitTest assembleDebug`.
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).

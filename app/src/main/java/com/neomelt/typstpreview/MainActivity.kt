@@ -131,10 +131,16 @@ private fun TypstPreviewScreen() {
         if (uri == null) return@rememberLauncherForActivityResult
         grantReadPermissionSafely(context, uri)
 
+        val selectedName = resolveDisplayName(context, uri)
+        if (!isTypLikeFileName(selectedName)) {
+            status = "导入失败：请选择 .typ/.txt/.md 文件（QQ 文件请先下载完成并复制到 Download）"
+            return@rememberLauncherForActivityResult
+        }
+
         val hadPdfLoaded = pdfUri != null
 
         typUri = uri
-        typName = DocumentFile.fromSingleUri(context, uri)?.name
+        typName = selectedName
         expectedPdfName = typName?.substringBeforeLast(".")?.plus(".pdf")
         typContent = readText(context, uri)
         currentMatchIndex = 0
@@ -216,7 +222,7 @@ private fun TypstPreviewScreen() {
             compiling = compiling,
             hasTypLoaded = typUri != null,
             compilerReady = compilerReady,
-            onPickTyp = { pickTyp.launch(arrayOf("text/*")) },
+            onPickTyp = { pickTyp.launch(arrayOf("*/*")) },
             onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) },
             onCompile = {
                 val sourceUri = typUri
