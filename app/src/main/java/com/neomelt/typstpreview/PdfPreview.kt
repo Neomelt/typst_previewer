@@ -3,6 +3,7 @@ package com.neomelt.typstpreview
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Build
@@ -59,7 +60,8 @@ internal fun renderPdfPage(context: Context, uri: Uri, pageIndex: Int): PdfRende
 
         page = renderer.openPage(pageIndex)
         val bitmap = Bitmap.createBitmap(page.width * 2, page.height * 2, Bitmap.Config.ARGB_8888)
-        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        bitmap.eraseColor(Color.WHITE)
+        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
         PdfRenderResult.Success(bitmap)
     } catch (_: SecurityException) {
         PdfRenderResult.Error(PdfRenderError.OPEN_FAILED)
