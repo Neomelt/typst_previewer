@@ -58,6 +58,7 @@
   - extension whitelist check (`.typ/.txt/.md`) with explicit user guidance for QQ downloads
   - added filename utility tests
 - PNG export now writes directly to system gallery (`MediaStore`) under `Pictures/TypstPreviewer`.
+- Added export confirmation dialog: after successful export, user can choose whether to jump to gallery.
 - Added compatibility manifest permission for Android <= 9 write path.
 - Validation pass completed with `./gradlew testDebugUnitTest assembleDebug`.
 - Added parser unit tests.

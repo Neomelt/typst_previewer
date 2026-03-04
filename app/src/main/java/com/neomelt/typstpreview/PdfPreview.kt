@@ -74,7 +74,12 @@ internal fun renderPdfPage(context: Context, uri: Uri, pageIndex: Int): PdfRende
     }
 }
 
-internal fun exportCurrentPageAsPng(context: Context, uri: Uri, pageIndex: Int): String? {
+internal data class ExportedImage(
+    val uri: Uri,
+    val displayName: String
+)
+
+internal fun exportCurrentPageAsPng(context: Context, uri: Uri, pageIndex: Int): ExportedImage? {
     val result = renderPdfPage(context, uri, pageIndex)
     if (result !is PdfRenderResult.Success) return null
 
@@ -105,7 +110,7 @@ internal fun exportCurrentPageAsPng(context: Context, uri: Uri, pageIndex: Int):
             resolver.update(imageUri, values, null, null)
         }
 
-        "已导出到相册：$displayName"
+        ExportedImage(uri = imageUri, displayName = displayName)
     } catch (_: Exception) {
         null
     }

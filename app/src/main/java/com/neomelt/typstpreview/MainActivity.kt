@@ -1,5 +1,6 @@
 package com.neomelt.typstpreview
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,9 +12,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -71,6 +74,7 @@ private fun TypstPreviewScreen() {
     var compiling by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var currentMatchIndex by remember { mutableIntStateOf(0) }
+    var exportedImage by remember { mutableStateOf<ExportedImage?>(null) }
 
     LaunchedEffect(Unit) {
         compilerReady = compiler.isAvailable()
@@ -311,11 +315,44 @@ private fun TypstPreviewScreen() {
             onNextPage = { if (pdfPageIndex < pdfPageCount - 1) pdfPageIndex++ },
             onExportCurrentPage = {
                 val exported = exportCurrentPageAsPng(context, pdfUri!!, pdfPageIndex)
-                status = exported ?: "导出失败：请确认 PDF 可读"
+                if (exported != null) {
+                    exportedImage = exported
+                    status = "已导出到相册：${exported.displayName}"
+                } else {
+                    status = "导出失败：请确认 PDF 可读"
+                }
             },
             onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) }
         ) {
             PdfPageImage(uri = pdfUri!!, pageIndex = pdfPageIndex, pageCount = pdfPageCount)
         }
+    }
+
+    exportedImage?.let { image ->
+        AlertDialog(
+            onDismissRequest = { exportedImage = null },
+            title = { Text("已导出到相册") },
+            text = { Text("${image.displayName}\n现在打开相册查看吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(image.uri, "image/*")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    val launched = runCatching { context.startActivity(intent) }.isSuccess
+                    if (!launched) {
+                        status = "无法直接打开相册，请手动在系统相册查看"
+                    }
+                    exportedImage = null
+                }) {
+                    Text("打开")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { exportedImage = null }) {
+                    Text("暂不")
+                }
+            }
+        )
     }
 }
