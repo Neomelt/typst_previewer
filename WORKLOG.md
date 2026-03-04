@@ -60,6 +60,10 @@
 - PNG export now writes directly to system gallery (`MediaStore`) under `Pictures/TypstPreviewer`.
 - Added export confirmation dialog: after successful export, user can choose whether to jump to gallery.
 - Added compatibility manifest permission for Android <= 9 write path.
+- Added local render-preview mode (基础渲染):
+  - source/render mode toggle
+  - Typst-to-block parser for heading/list/paragraph rendering
+  - render parser unit test coverage
 - Validation pass completed with `./gradlew testDebugUnitTest assembleDebug`.
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).

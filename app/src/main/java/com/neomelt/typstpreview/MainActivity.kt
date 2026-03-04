@@ -32,6 +32,8 @@ import androidx.documentfile.provider.DocumentFile
 import com.neomelt.typstpreview.ui.components.OutlinePanel
 import com.neomelt.typstpreview.ui.components.PdfPageImage
 import com.neomelt.typstpreview.ui.components.PdfPreviewPanel
+import com.neomelt.typstpreview.ui.components.RenderModeToggle
+import com.neomelt.typstpreview.ui.components.RenderedPreview
 import com.neomelt.typstpreview.ui.components.SearchPanel
 import com.neomelt.typstpreview.ui.components.SourceViewer
 import com.neomelt.typstpreview.ui.components.StatusBar
@@ -74,6 +76,7 @@ private fun TypstPreviewScreen() {
     var compiling by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var currentMatchIndex by remember { mutableIntStateOf(0) }
+    var renderMode by remember { mutableStateOf(false) }
     var exportedImage by remember { mutableStateOf<ExportedImage?>(null) }
 
     LaunchedEffect(Unit) {
@@ -200,6 +203,7 @@ private fun TypstPreviewScreen() {
     }
 
     val headings = remember(typContent) { TypstOutlineParser.parse(typContent) }
+    val renderBlocks = remember(typContent) { TypstRenderParser.parse(typContent) }
     val searchMatches = remember(typContent, searchQuery) {
         TypstSearch.findLineMatches(typContent, searchQuery)
     }
@@ -304,7 +308,17 @@ private fun TypstPreviewScreen() {
             }
         )
 
-        SourceViewer(content = typContent, scrollState = typScrollState)
+        RenderModeToggle(
+            renderMode = renderMode,
+            onSourceMode = { renderMode = false },
+            onRenderMode = { renderMode = true }
+        )
+
+        if (renderMode) {
+            RenderedPreview(blocks = renderBlocks, scrollState = typScrollState)
+        } else {
+            SourceViewer(content = typContent, scrollState = typScrollState)
+        }
 
         PdfPreviewPanel(
             hasPdf = pdfUri != null && pdfPageCount > 0,
