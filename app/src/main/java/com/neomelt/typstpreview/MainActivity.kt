@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,8 +40,11 @@ import com.neomelt.typstpreview.ui.components.SearchPanel
 import com.neomelt.typstpreview.ui.components.SourceViewer
 import com.neomelt.typstpreview.ui.components.StatusBar
 import com.neomelt.typstpreview.ui.components.TopActionsBar
+import com.neomelt.typstpreview.ui.components.TermuxGuidePanel
 import com.neomelt.typstpreview.ui.components.TypstSetupDialog
 import kotlinx.coroutines.launch
+
+private enum class AppTab { PREVIEW, ENV, GUIDE }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,6 +86,7 @@ private fun TypstPreviewScreen() {
     var searchQuery by remember { mutableStateOf("") }
     var currentMatchIndex by remember { mutableIntStateOf(0) }
     var renderMode by remember { mutableStateOf(false) }
+    var activeTab by remember { mutableStateOf(AppTab.PREVIEW) }
     var exportedImage by remember { mutableStateOf<ExportedImage?>(null) }
 
     LaunchedEffect(Unit) {
@@ -322,78 +328,99 @@ private fun TypstPreviewScreen() {
             }
         )
 
-        Text("当前 typ：${typName ?: "未选择"}")
-        Text("当前 pdf：${pdfName ?: "未选择"}")
-        expectedPdfName?.let { Text("推荐文件名：$it") }
+        when (activeTab) {
+            AppTab.PREVIEW -> {
+                Text("当前 typ：${typName ?: "未选择"}")
+                Text("当前 pdf：${pdfName ?: "未选择"}")
+                expectedPdfName?.let { Text("推荐文件名：$it") }
 
-        OutlinePanel(
-            headings = headings,
-            onHeadingClick = { heading ->
-                val target = ((heading.lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
-                scope.launch { typScrollState.animateScrollTo(target) }
-                status = "已跳转到第 ${heading.lineNumber} 行附近"
-            }
-        )
+                OutlinePanel(
+                    headings = headings,
+                    onHeadingClick = { heading ->
+                        val target = ((heading.lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
+                        scope.launch { typScrollState.animateScrollTo(target) }
+                        status = "已跳转到第 ${heading.lineNumber} 行附近"
+                    }
+                )
 
-        SearchPanel(
-            query = searchQuery,
-            matchCount = searchMatches.size,
-            currentMatchIndex = currentMatchIndex,
-            onQueryChange = {
-                searchQuery = it
-                currentMatchIndex = 0
-            },
-            onPrevMatch = {
-                if (searchMatches.isNotEmpty()) {
-                    currentMatchIndex = if (currentMatchIndex > 0) currentMatchIndex - 1 else searchMatches.size - 1
-                    val lineNumber = searchMatches[currentMatchIndex]
-                    val target = ((lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
-                    scope.launch { typScrollState.animateScrollTo(target) }
-                    status = "搜索命中：第 $lineNumber 行"
+                SearchPanel(
+                    query = searchQuery,
+                    matchCount = searchMatches.size,
+                    currentMatchIndex = currentMatchIndex,
+                    onQueryChange = {
+                        searchQuery = it
+                        currentMatchIndex = 0
+                    },
+                    onPrevMatch = {
+                        if (searchMatches.isNotEmpty()) {
+                            currentMatchIndex = if (currentMatchIndex > 0) currentMatchIndex - 1 else searchMatches.size - 1
+                            val lineNumber = searchMatches[currentMatchIndex]
+                            val target = ((lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
+                            scope.launch { typScrollState.animateScrollTo(target) }
+                            status = "搜索命中：第 $lineNumber 行"
+                        }
+                    },
+                    onNextMatch = {
+                        if (searchMatches.isNotEmpty()) {
+                            currentMatchIndex = (currentMatchIndex + 1) % searchMatches.size
+                            val lineNumber = searchMatches[currentMatchIndex]
+                            val target = ((lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
+                            scope.launch { typScrollState.animateScrollTo(target) }
+                            status = "搜索命中：第 $lineNumber 行"
+                        }
+                    }
+                )
+
+                RenderModeToggle(
+                    renderMode = renderMode,
+                    onSourceMode = { renderMode = false },
+                    onRenderMode = { renderMode = true }
+                )
+
+                if (renderMode) {
+                    RenderedPreview(blocks = renderBlocks, scrollState = typScrollState)
+                } else {
+                    SourceViewer(content = typContent, scrollState = typScrollState)
                 }
-            },
-            onNextMatch = {
-                if (searchMatches.isNotEmpty()) {
-                    currentMatchIndex = (currentMatchIndex + 1) % searchMatches.size
-                    val lineNumber = searchMatches[currentMatchIndex]
-                    val target = ((lineNumber - 1) * 28).coerceAtMost(typScrollState.maxValue)
-                    scope.launch { typScrollState.animateScrollTo(target) }
-                    status = "搜索命中：第 $lineNumber 行"
+
+                PdfPreviewPanel(
+                    hasPdf = pdfUri != null && pdfPageCount > 0,
+                    expectedPdfName = expectedPdfName,
+                    pdfPageIndex = pdfPageIndex,
+                    pdfPageCount = pdfPageCount,
+                    onPrevPage = { if (pdfPageIndex > 0) pdfPageIndex-- },
+                    onNextPage = { if (pdfPageIndex < pdfPageCount - 1) pdfPageIndex++ },
+                    onExportCurrentPage = {
+                        val exported = exportCurrentPageAsPng(context, pdfUri!!, pdfPageIndex)
+                        if (exported != null) {
+                            exportedImage = exported
+                            status = "已导出到相册：${exported.displayName}"
+                        } else {
+                            status = "导出失败：请确认 PDF 可读"
+                        }
+                    },
+                    onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) }
+                ) {
+                    PdfPageImage(uri = pdfUri!!, pageIndex = pdfPageIndex, pageCount = pdfPageCount)
                 }
             }
-        )
 
-        RenderModeToggle(
-            renderMode = renderMode,
-            onSourceMode = { renderMode = false },
-            onRenderMode = { renderMode = true }
-        )
+            AppTab.ENV -> {
+                Text("环境状态：$setupStatus")
+                Text("当前命令：${typstCommandPath ?: "未配置"}")
+                Text("下载链接：${if (typstDownloadUrl.isBlank()) "未设置" else typstDownloadUrl}")
+                Text("点上方“环境配置”进入完整向导")
+            }
 
-        if (renderMode) {
-            RenderedPreview(blocks = renderBlocks, scrollState = typScrollState)
-        } else {
-            SourceViewer(content = typContent, scrollState = typScrollState)
+            AppTab.GUIDE -> {
+                TermuxGuidePanel()
+            }
         }
 
-        PdfPreviewPanel(
-            hasPdf = pdfUri != null && pdfPageCount > 0,
-            expectedPdfName = expectedPdfName,
-            pdfPageIndex = pdfPageIndex,
-            pdfPageCount = pdfPageCount,
-            onPrevPage = { if (pdfPageIndex > 0) pdfPageIndex-- },
-            onNextPage = { if (pdfPageIndex < pdfPageCount - 1) pdfPageIndex++ },
-            onExportCurrentPage = {
-                val exported = exportCurrentPageAsPng(context, pdfUri!!, pdfPageIndex)
-                if (exported != null) {
-                    exportedImage = exported
-                    status = "已导出到相册：${exported.displayName}"
-                } else {
-                    status = "导出失败：请确认 PDF 可读"
-                }
-            },
-            onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) }
-        ) {
-            PdfPageImage(uri = pdfUri!!, pageIndex = pdfPageIndex, pageCount = pdfPageCount)
+        NavigationBar {
+            NavigationBarItem(selected = activeTab == AppTab.PREVIEW, onClick = { activeTab = AppTab.PREVIEW }, label = { Text("预览") }, icon = {})
+            NavigationBarItem(selected = activeTab == AppTab.ENV, onClick = { activeTab = AppTab.ENV }, label = { Text("环境") }, icon = {})
+            NavigationBarItem(selected = activeTab == AppTab.GUIDE, onClick = { activeTab = AppTab.GUIDE }, label = { Text("教程") }, icon = {})
         }
     }
 
@@ -405,6 +432,12 @@ private fun TypstPreviewScreen() {
             onDownloadUrlChange = {
                 typstDownloadUrl = it
                 prefs.edit().putString(PREF_TYPST_URL, it).apply()
+            },
+            onUseDefaultUrl = {
+                val url = defaultTypstDownloadUrl(preferredAbi())
+                typstDownloadUrl = url
+                prefs.edit().putString(PREF_TYPST_URL, url).apply()
+                status = "已填入默认下载链接"
             },
             onDismiss = { setupDialogVisible = false },
             onDetect = {

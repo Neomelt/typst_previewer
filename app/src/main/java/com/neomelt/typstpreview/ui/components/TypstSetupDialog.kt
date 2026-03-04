@@ -16,6 +16,7 @@ internal fun TypstSetupDialog(
     abiText: String,
     downloadUrl: String,
     onDownloadUrlChange: (String) -> Unit,
+    onUseDefaultUrl: () -> Unit,
     onDismiss: () -> Unit,
     onDetect: () -> Unit,
     onAutoConfigure: () -> Unit,
@@ -45,6 +46,7 @@ internal fun TypstSetupDialog(
                 )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onUseDefaultUrl) { Text("填默认链接") }
                     TextButton(onClick = onAutoConfigure) { Text("自动配置") }
                     TextButton(onClick = onInstallFromUrl) { Text("云端安装") }
                     TextButton(onClick = onImportBinary) { Text("导入可执行文件") }

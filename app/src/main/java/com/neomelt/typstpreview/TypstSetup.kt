@@ -86,6 +86,18 @@ internal fun preferredAbi(): String {
     return Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
 }
 
+internal fun defaultTypstDownloadUrl(abi: String): String {
+    val version = "v0.14.2"
+    val asset = when {
+        abi.contains("arm64", ignoreCase = true) || abi.contains("aarch64", ignoreCase = true) ->
+            "typst-aarch64-unknown-linux-musl.tar.xz"
+        abi.contains("armeabi", ignoreCase = true) || abi.contains("armv7", ignoreCase = true) ->
+            "typst-armv7-unknown-linux-musleabi.tar.xz"
+        else -> "typst-aarch64-unknown-linux-musl.tar.xz"
+    }
+    return "https://github.com/typst/typst/releases/download/$version/$asset"
+}
+
 internal suspend fun installTypstFromUrl(context: Context, url: String): Result<String> = withContext(Dispatchers.IO) {
     runCatching {
         val cleanUrl = url.trim()
