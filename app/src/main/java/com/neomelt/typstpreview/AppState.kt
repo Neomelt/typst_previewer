@@ -6,6 +6,7 @@ internal const val PREF_PDF_URI = "pdf_uri"
 internal const val PREF_PDF_PAGE = "pdf_page"
 internal const val PREF_TYPST_CMD = "typst_cmd"
 internal const val PREF_TYPST_URL = "typst_url"
+internal const val TERMUX_MODE = "termux:typst"
 
 internal fun buildRestoreStatusMessage(typRestoreFailed: Boolean, pdfRestoreFailed: Boolean): String? {
     return when {
