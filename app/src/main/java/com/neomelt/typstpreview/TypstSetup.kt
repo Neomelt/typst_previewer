@@ -11,6 +11,12 @@ internal data class TypstEnvStatus(
     val detail: String
 )
 
+internal data class TypstAutoConfigResult(
+    val available: Boolean,
+    val command: String?,
+    val detail: String
+)
+
 internal suspend fun detectTypstEnvironment(commandPath: String?): TypstEnvStatus {
     val command = commandPath?.takeIf { it.isNotBlank() } ?: "typst"
     val available = LocalTypstCommandCompiler(command).isAvailable()
@@ -39,4 +45,30 @@ internal fun installTypstBinaryFromUri(context: Context, sourceUri: Uri): Result
 
         target.absolutePath
     }
+}
+
+internal suspend fun autoConfigureTypst(context: Context, currentPath: String?): TypstAutoConfigResult {
+    val candidates = buildList {
+        currentPath?.takeIf { it.isNotBlank() }?.let { add(it) }
+        add(File(context.filesDir, "bin/typst").absolutePath)
+        add("/data/data/com.termux/files/usr/bin/typst")
+        add("typst")
+    }.distinct()
+
+    for (candidate in candidates) {
+        val env = detectTypstEnvironment(candidate)
+        if (env.available) {
+            return TypstAutoConfigResult(
+                available = true,
+                command = candidate,
+                detail = "自动配置成功：${env.command}"
+            )
+        }
+    }
+
+    return TypstAutoConfigResult(
+        available = false,
+        command = null,
+        detail = "自动配置失败：未找到可用 Typst，请手动导入可执行文件"
+    )
 }

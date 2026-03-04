@@ -14,6 +14,7 @@ internal fun TypstSetupDialog(
     statusText: String,
     onDismiss: () -> Unit,
     onDetect: () -> Unit,
+    onAutoConfigure: () -> Unit,
     onImportBinary: () -> Unit,
     onClearConfig: () -> Unit
 ) {
@@ -30,6 +31,7 @@ internal fun TypstSetupDialog(
                         "当前状态：$statusText"
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onAutoConfigure) { Text("自动配置") }
                     TextButton(onClick = onImportBinary) { Text("导入可执行文件") }
                     TextButton(onClick = onClearConfig) { Text("清除配置") }
                 }

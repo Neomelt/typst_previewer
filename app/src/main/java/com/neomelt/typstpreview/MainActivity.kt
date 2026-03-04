@@ -407,6 +407,20 @@ private fun TypstPreviewScreen() {
                     status = if (env.available) "Typst 环境检测通过" else "Typst 环境不可用"
                 }
             },
+            onAutoConfigure = {
+                scope.launch {
+                    val result = autoConfigureTypst(context, typstCommandPath)
+                    compilerReady = result.available
+                    setupStatus = result.detail
+                    if (result.available && !result.command.isNullOrBlank()) {
+                        typstCommandPath = result.command
+                        prefs.edit().putString(PREF_TYPST_CMD, result.command).apply()
+                        status = "Typst 自动配置完成"
+                    } else {
+                        status = result.detail
+                    }
+                }
+            },
             onImportBinary = { pickTypstBinary.launch(arrayOf("*/*")) },
             onClearConfig = {
                 typstCommandPath = null
