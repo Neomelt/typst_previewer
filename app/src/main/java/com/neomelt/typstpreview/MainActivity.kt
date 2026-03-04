@@ -74,6 +74,7 @@ private fun TypstPreviewScreen() {
     var status by remember { mutableStateOf("提示：先导入 .typ，再导入对应 PDF 预览") }
     var compilerReady by remember { mutableStateOf(false) }
     var typstCommandPath by remember { mutableStateOf<String?>(null) }
+    var typstDownloadUrl by remember { mutableStateOf("") }
     var setupDialogVisible by remember { mutableStateOf(false) }
     var setupStatus by remember { mutableStateOf("未检测") }
     var compiling by remember { mutableStateOf(false) }
@@ -84,6 +85,7 @@ private fun TypstPreviewScreen() {
 
     LaunchedEffect(Unit) {
         typstCommandPath = prefs.getString(PREF_TYPST_CMD, null)
+        typstDownloadUrl = prefs.getString(PREF_TYPST_URL, "") ?: ""
 
         val env = detectTypstEnvironment(typstCommandPath)
         compilerReady = env.available
@@ -398,6 +400,12 @@ private fun TypstPreviewScreen() {
     if (setupDialogVisible) {
         TypstSetupDialog(
             statusText = setupStatus,
+            abiText = preferredAbi(),
+            downloadUrl = typstDownloadUrl,
+            onDownloadUrlChange = {
+                typstDownloadUrl = it
+                prefs.edit().putString(PREF_TYPST_URL, it).apply()
+            },
             onDismiss = { setupDialogVisible = false },
             onDetect = {
                 scope.launch {
@@ -418,6 +426,28 @@ private fun TypstPreviewScreen() {
                         status = "Typst 自动配置完成"
                     } else {
                         status = result.detail
+                    }
+                }
+            },
+            onInstallFromUrl = {
+                scope.launch {
+                    val url = typstDownloadUrl.trim()
+                    if (url.isBlank()) {
+                        status = "请先填写下载链接"
+                        return@launch
+                    }
+                    setupStatus = "正在下载并安装..."
+                    val install = installTypstFromUrl(context, url)
+                    if (install.isSuccess) {
+                        typstCommandPath = install.getOrNull()
+                        prefs.edit().putString(PREF_TYPST_CMD, typstCommandPath).apply()
+                        val env = detectTypstEnvironment(typstCommandPath)
+                        compilerReady = env.available
+                        setupStatus = env.detail
+                        status = if (env.available) "云端安装并配置成功" else "安装完成，但检测失败"
+                    } else {
+                        setupStatus = "云端安装失败"
+                        status = "云端安装失败：${install.exceptionOrNull()?.message}"
                     }
                 }
             },

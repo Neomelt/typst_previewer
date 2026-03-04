@@ -2,8 +2,14 @@ package com.neomelt.typstpreview
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import java.io.File
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.zip.ZipInputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 internal data class TypstEnvStatus(
     val available: Boolean,
@@ -71,4 +77,65 @@ internal suspend fun autoConfigureTypst(context: Context, currentPath: String?):
         command = null,
         detail = "自动配置失败：未找到可用 Typst，请手动导入可执行文件"
     )
+}
+
+internal fun preferredAbi(): String {
+    return Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
+}
+
+internal suspend fun installTypstFromUrl(context: Context, url: String): Result<String> = withContext(Dispatchers.IO) {
+    runCatching {
+        val cleanUrl = url.trim()
+        require(cleanUrl.startsWith("http://") || cleanUrl.startsWith("https://")) {
+            "仅支持 http/https 下载链接"
+        }
+
+        val binDir = File(context.filesDir, "bin").apply { mkdirs() }
+        val target = File(binDir, "typst")
+
+        if (cleanUrl.lowercase().endsWith(".zip")) {
+            val tmpZip = File(context.cacheDir, "typst-download.zip")
+            downloadToFile(cleanUrl, tmpZip)
+            extractTypstFromZip(tmpZip, target)
+            tmpZip.delete()
+        } else {
+            downloadToFile(cleanUrl, target)
+        }
+
+        if (!target.setExecutable(true)) {
+            error("下载成功，但无法设置可执行权限")
+        }
+
+        target.absolutePath
+    }
+}
+
+private fun downloadToFile(url: String, target: File) {
+    val conn = URL(url).openConnection() as HttpURLConnection
+    conn.connectTimeout = 15_000
+    conn.readTimeout = 60_000
+    conn.instanceFollowRedirects = true
+
+    conn.inputStream.use { input ->
+        FileOutputStream(target).use { output ->
+            input.copyTo(output)
+        }
+    }
+}
+
+private fun extractTypstFromZip(zipFile: File, target: File) {
+    ZipInputStream(zipFile.inputStream()).use { zip ->
+        var entry = zip.nextEntry
+        while (entry != null) {
+            val name = entry.name.substringAfterLast('/')
+            if (!entry.isDirectory && name == "typst") {
+                FileOutputStream(target).use { output ->
+                    zip.copyTo(output)
+                }
+                return
+            }
+            entry = zip.nextEntry
+        }
+    }
+    error("ZIP 中未找到 typst 可执行文件")
 }

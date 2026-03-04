@@ -67,6 +67,7 @@
 - Added Typst environment setup guide flow:
   - setup dialog (detect/auto-config/import/clear)
   - auto-config scans saved path, app-local binary, Termux path, and system command
+  - cloud-install flow: download typst package (bin/zip URL) and auto-install to app-local bin
   - import typst executable into app-local `files/bin/typst`
   - persist executable path and use it for compile pipeline
 - Updated typ import behavior to auto-render PDF when Typst environment is ready.
