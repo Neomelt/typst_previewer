@@ -64,6 +64,11 @@
   - source/render mode toggle
   - Typst-to-block parser for heading/list/paragraph rendering
   - render parser unit test coverage
+- Added Typst environment setup guide flow:
+  - setup dialog (detect/import/clear)
+  - import typst executable into app-local `files/bin/typst`
+  - persist executable path and use it for compile pipeline
+- Updated typ import behavior to auto-render PDF when Typst environment is ready.
 - Validation pass completed with `./gradlew testDebugUnitTest assembleDebug`.
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).

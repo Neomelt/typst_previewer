@@ -38,6 +38,7 @@ import com.neomelt.typstpreview.ui.components.SearchPanel
 import com.neomelt.typstpreview.ui.components.SourceViewer
 import com.neomelt.typstpreview.ui.components.StatusBar
 import com.neomelt.typstpreview.ui.components.TopActionsBar
+import com.neomelt.typstpreview.ui.components.TypstSetupDialog
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -59,7 +60,6 @@ private fun TypstPreviewScreen() {
     val scope = rememberCoroutineScope()
     val typScrollState = rememberScrollState()
     val prefs = remember { context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE) }
-    val compiler = remember { LocalTypstCommandCompiler() }
 
     var typUri by remember { mutableStateOf<Uri?>(null) }
     var typContent by remember { mutableStateOf("还未导入 .typ 文件") }
@@ -73,6 +73,9 @@ private fun TypstPreviewScreen() {
 
     var status by remember { mutableStateOf("提示：先导入 .typ，再导入对应 PDF 预览") }
     var compilerReady by remember { mutableStateOf(false) }
+    var typstCommandPath by remember { mutableStateOf<String?>(null) }
+    var setupDialogVisible by remember { mutableStateOf(false) }
+    var setupStatus by remember { mutableStateOf("未检测") }
     var compiling by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var currentMatchIndex by remember { mutableIntStateOf(0) }
@@ -80,7 +83,11 @@ private fun TypstPreviewScreen() {
     var exportedImage by remember { mutableStateOf<ExportedImage?>(null) }
 
     LaunchedEffect(Unit) {
-        compilerReady = compiler.isAvailable()
+        typstCommandPath = prefs.getString(PREF_TYPST_CMD, null)
+
+        val env = detectTypstEnvironment(typstCommandPath)
+        compilerReady = env.available
+        setupStatus = env.detail
         if (!compilerReady) {
             status = "未检测到 typst 命令：可继续手动导入 PDF 预览"
         }
@@ -134,6 +141,25 @@ private fun TypstPreviewScreen() {
             .apply()
     }
 
+    val pickTypstBinary = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        grantReadPermissionSafely(context, uri)
+
+        val installResult = installTypstBinaryFromUri(context, uri)
+        if (installResult.isSuccess) {
+            typstCommandPath = installResult.getOrNull()
+            prefs.edit().putString(PREF_TYPST_CMD, typstCommandPath).apply()
+            scope.launch {
+                val env = detectTypstEnvironment(typstCommandPath)
+                compilerReady = env.available
+                setupStatus = env.detail
+                status = if (env.available) "Typst 环境配置成功" else "导入成功但环境检测失败"
+            }
+        } else {
+            status = "导入 Typst 可执行文件失败：${installResult.exceptionOrNull()?.message}"
+        }
+    }
+
     val pickTyp = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         grantReadPermissionSafely(context, uri)
@@ -171,7 +197,8 @@ private fun TypstPreviewScreen() {
         scope.launch {
             compiling = true
             status = "已导入 Typst，正在自动渲染 PDF..."
-            when (val result = compiler.compile(context, uri)) {
+            val activeCompiler = LocalTypstCommandCompiler(typstCommandPath ?: "typst")
+            when (val result = activeCompiler.compile(context, uri)) {
                 is CompileResult.Success -> {
                     val compiledUri = loadCompiledPdf(result.outputPdfFile)
                     val pageCount = getPdfPageCount(context, compiledUri)
@@ -256,6 +283,7 @@ private fun TypstPreviewScreen() {
             compilerReady = compilerReady,
             onPickTyp = { pickTyp.launch(arrayOf("*/*")) },
             onPickPdf = { pickPdf.launch(arrayOf("application/pdf")) },
+            onSetup = { setupDialogVisible = true },
             onCompile = {
                 val sourceUri = typUri
                 if (!compilerReady) {
@@ -266,7 +294,8 @@ private fun TypstPreviewScreen() {
                     scope.launch {
                         compiling = true
                         status = "正在编译 Typst..."
-                        when (val result = compiler.compile(context, sourceUri)) {
+                        val activeCompiler = LocalTypstCommandCompiler(typstCommandPath ?: "typst")
+                        when (val result = activeCompiler.compile(context, sourceUri)) {
                             is CompileResult.Success -> {
                                 val compiledUri = loadCompiledPdf(result.outputPdfFile)
                                 val pageCount = getPdfPageCount(context, compiledUri)
@@ -364,6 +393,29 @@ private fun TypstPreviewScreen() {
         ) {
             PdfPageImage(uri = pdfUri!!, pageIndex = pdfPageIndex, pageCount = pdfPageCount)
         }
+    }
+
+    if (setupDialogVisible) {
+        TypstSetupDialog(
+            statusText = setupStatus,
+            onDismiss = { setupDialogVisible = false },
+            onDetect = {
+                scope.launch {
+                    val env = detectTypstEnvironment(typstCommandPath)
+                    compilerReady = env.available
+                    setupStatus = env.detail
+                    status = if (env.available) "Typst 环境检测通过" else "Typst 环境不可用"
+                }
+            },
+            onImportBinary = { pickTypstBinary.launch(arrayOf("*/*")) },
+            onClearConfig = {
+                typstCommandPath = null
+                prefs.edit().remove(PREF_TYPST_CMD).apply()
+                compilerReady = false
+                setupStatus = "已清除本地 Typst 配置"
+                status = "已清除 Typst 配置，请重新导入可执行文件"
+            }
+        )
     }
 
     exportedImage?.let { image ->

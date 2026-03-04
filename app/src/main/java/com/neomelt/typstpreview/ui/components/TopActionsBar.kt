@@ -15,7 +15,8 @@ internal fun TopActionsBar(
     compilerReady: Boolean,
     onPickTyp: () -> Unit,
     onPickPdf: () -> Unit,
-    onCompile: () -> Unit
+    onCompile: () -> Unit,
+    onSetup: () -> Unit
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = onPickTyp, enabled = !compiling) {
@@ -26,6 +27,9 @@ internal fun TopActionsBar(
         }
         Button(onClick = onCompile, enabled = hasTypLoaded && compilerReady && !compiling) {
             Text(if (compiling) "编译中..." else "编译")
+        }
+        Button(onClick = onSetup, enabled = !compiling) {
+            Text("环境")
         }
     }
 }

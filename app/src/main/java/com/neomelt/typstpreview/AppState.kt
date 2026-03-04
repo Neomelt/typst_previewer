@@ -4,6 +4,7 @@ internal const val PREF_NAME = "typst_previewer_prefs"
 internal const val PREF_TYP_URI = "typ_uri"
 internal const val PREF_PDF_URI = "pdf_uri"
 internal const val PREF_PDF_PAGE = "pdf_page"
+internal const val PREF_TYPST_CMD = "typst_cmd"
 
 internal fun buildRestoreStatusMessage(typRestoreFailed: Boolean, pdfRestoreFailed: Boolean): String? {
     return when {
