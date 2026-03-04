@@ -99,6 +99,10 @@ internal suspend fun installTypstFromUrl(context: Context, url: String): Result<
 
         downloadToFile(cleanUrl, tmpFile)
 
+        if (looksLikeHtml(tmpFile)) {
+            error("下载内容不是二进制文件（可能被重定向到网页/鉴权页）")
+        }
+
         val installed = when {
             tryExtractTypstFromZip(tmpFile, target) -> true
             tryExtractTypstFromTarXz(tmpFile, target) -> true
@@ -118,18 +122,36 @@ internal suspend fun installTypstFromUrl(context: Context, url: String): Result<
         target.absolutePath
     }
 }
-
 private fun downloadToFile(url: String, target: File) {
     val conn = URL(url).openConnection() as HttpURLConnection
     conn.connectTimeout = 15_000
     conn.readTimeout = 60_000
     conn.instanceFollowRedirects = true
+    conn.setRequestProperty("User-Agent", "TypstPreviewer-Android/1.0")
+
+    val code = conn.responseCode
+    if (code !in 200..299) {
+        val snippet = conn.errorStream?.bufferedReader()?.use { it.readText().take(120) } ?: ""
+        error("下载失败：HTTP $code ${conn.responseMessage}. $snippet")
+    }
 
     conn.inputStream.use { input ->
         FileOutputStream(target).use { output ->
             input.copyTo(output)
         }
     }
+}
+
+private fun looksLikeHtml(file: File): Boolean {
+    return runCatching {
+        val head = file.inputStream().buffered().use { input ->
+            val bytes = ByteArray(256)
+            val read = input.read(bytes)
+            if (read <= 0) return false
+            String(bytes, 0, read).lowercase()
+        }
+        head.contains("<html") || head.contains("<!doctype")
+    }.getOrDefault(false)
 }
 
 private fun tryExtractTypstFromZip(zipFile: File, target: File): Boolean {
