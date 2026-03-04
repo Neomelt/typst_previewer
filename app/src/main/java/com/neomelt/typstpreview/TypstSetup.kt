@@ -4,12 +4,15 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.ZipInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.tukaani.xz.XZInputStream
 
 internal data class TypstEnvStatus(
     val available: Boolean,
@@ -92,15 +95,21 @@ internal suspend fun installTypstFromUrl(context: Context, url: String): Result<
 
         val binDir = File(context.filesDir, "bin").apply { mkdirs() }
         val target = File(binDir, "typst")
+        val tmpFile = File(context.cacheDir, "typst-download.tmp")
 
-        if (cleanUrl.lowercase().endsWith(".zip")) {
-            val tmpZip = File(context.cacheDir, "typst-download.zip")
-            downloadToFile(cleanUrl, tmpZip)
-            extractTypstFromZip(tmpZip, target)
-            tmpZip.delete()
-        } else {
-            downloadToFile(cleanUrl, target)
+        downloadToFile(cleanUrl, tmpFile)
+
+        val installed = when {
+            tryExtractTypstFromZip(tmpFile, target) -> true
+            tryExtractTypstFromTarXz(tmpFile, target) -> true
+            else -> {
+                tmpFile.copyTo(target, overwrite = true)
+                true
+            }
         }
+
+        tmpFile.delete()
+        if (!installed) error("下载完成，但无法安装 typst")
 
         if (!target.setExecutable(true)) {
             error("下载成功，但无法设置可执行权限")
@@ -123,19 +132,44 @@ private fun downloadToFile(url: String, target: File) {
     }
 }
 
-private fun extractTypstFromZip(zipFile: File, target: File) {
-    ZipInputStream(zipFile.inputStream()).use { zip ->
-        var entry = zip.nextEntry
-        while (entry != null) {
-            val name = entry.name.substringAfterLast('/')
-            if (!entry.isDirectory && name == "typst") {
-                FileOutputStream(target).use { output ->
-                    zip.copyTo(output)
+private fun tryExtractTypstFromZip(zipFile: File, target: File): Boolean {
+    return runCatching {
+        ZipInputStream(zipFile.inputStream()).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                val name = entry.name.substringAfterLast('/')
+                if (!entry.isDirectory && name == "typst") {
+                    FileOutputStream(target).use { output ->
+                        zip.copyTo(output)
+                    }
+                    return true
                 }
-                return
+                entry = zip.nextEntry
             }
-            entry = zip.nextEntry
         }
-    }
-    error("ZIP 中未找到 typst 可执行文件")
+        false
+    }.getOrDefault(false)
+}
+
+private fun tryExtractTypstFromTarXz(file: File, target: File): Boolean {
+    return runCatching {
+        FileInputStream(file).use { fis ->
+            XZInputStream(fis).use { xzIn ->
+                TarArchiveInputStream(xzIn).use { tarIn ->
+                    var entry = tarIn.nextTarEntry
+                    while (entry != null) {
+                        val name = entry.name.substringAfterLast('/')
+                        if (!entry.isDirectory && name == "typst") {
+                            FileOutputStream(target).use { out ->
+                                tarIn.copyTo(out)
+                            }
+                            return true
+                        }
+                        entry = tarIn.nextTarEntry
+                    }
+                }
+            }
+        }
+        false
+    }.getOrDefault(false)
 }
