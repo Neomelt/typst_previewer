@@ -3,6 +3,9 @@ package com.neomelt.typstpreview
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
+import java.io.File
+import java.io.FileOutputStream
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -88,6 +91,9 @@ private fun TypstPreviewScreen() {
     var renderMode by remember { mutableStateOf(false) }
     var activeTab by remember { mutableStateOf(AppTab.PREVIEW) }
     var exportedImage by remember { mutableStateOf<ExportedImage?>(null) }
+    val termuxWorkDir = remember {
+        File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "TypstPreviewer")
+    }
 
     LaunchedEffect(Unit) {
         typstCommandPath = prefs.getString(PREF_TYPST_CMD, null)
@@ -205,6 +211,14 @@ private fun TypstPreviewScreen() {
         scope.launch {
             compiling = true
             status = "已导入 Typst，正在自动渲染 PDF..."
+
+            if (typstCommandPath == TERMUX_MODE) {
+                val commandResult = runTermuxCompileCommand(context, uri, termuxWorkDir)
+                status = commandResult
+                compiling = false
+                return@launch
+            }
+
             val activeCompiler = LocalTypstCommandCompiler(typstCommandPath ?: "typst")
             when (val result = activeCompiler.compile(context, uri)) {
                 is CompileResult.Success -> {
@@ -302,6 +316,13 @@ private fun TypstPreviewScreen() {
                     scope.launch {
                         compiling = true
                         status = "正在编译 Typst..."
+
+                        if (typstCommandPath == TERMUX_MODE) {
+                            status = runTermuxCompileCommand(context, sourceUri, termuxWorkDir)
+                            compiling = false
+                            return@launch
+                        }
+
                         val activeCompiler = LocalTypstCommandCompiler(typstCommandPath ?: "typst")
                         when (val result = activeCompiler.compile(context, sourceUri)) {
                             is CompileResult.Success -> {
@@ -410,6 +431,20 @@ private fun TypstPreviewScreen() {
                 Text("当前命令：${typstCommandPath ?: "未配置"}")
                 Text("下载链接：${if (typstDownloadUrl.isBlank()) "未设置" else typstDownloadUrl}")
                 Text("点上方“环境配置”进入完整向导")
+                TextButton(onClick = {
+                    val loaded = loadTermuxCompiledPdf(context, termuxWorkDir)
+                    if (loaded != null) {
+                        pdfUri = loaded.first
+                        pdfName = loaded.second
+                        pdfPageCount = loaded.third
+                        pdfPageIndex = 0
+                        status = "已加载 Termux 编译结果（${loaded.third} 页）"
+                    } else {
+                        status = "未找到 Termux 编译结果，请先在 Termux 中完成编译"
+                    }
+                }) {
+                    Text("刷新 Termux 编译结果")
+                }
             }
 
             AppTab.GUIDE -> {
@@ -461,6 +496,13 @@ private fun TypstPreviewScreen() {
                         status = result.detail
                     }
                 }
+            },
+            onEnableTermuxMode = {
+                typstCommandPath = TERMUX_MODE
+                prefs.edit().putString(PREF_TYPST_CMD, TERMUX_MODE).apply()
+                compilerReady = true
+                setupStatus = "已启用 Termux 模式"
+                status = "Termux 模式已启用：导入 typ 后会发起 Termux 编译"
             },
             onInstallFromUrl = {
                 scope.launch {
@@ -522,4 +564,45 @@ private fun TypstPreviewScreen() {
             }
         )
     }
+}
+
+private fun runTermuxCompileCommand(context: android.content.Context, sourceUri: Uri, workDir: File): String {
+    return runCatching {
+        workDir.mkdirs()
+        val inputFile = File(workDir, "input.typ")
+        val outputFile = File(workDir, "output.pdf")
+
+        context.contentResolver.openInputStream(sourceUri)?.use { input ->
+            FileOutputStream(inputFile).use { output -> input.copyTo(output) }
+        } ?: error("无法读取 .typ 文件")
+
+        val command = "/data/data/com.termux/files/usr/bin/typst compile ${inputFile.absolutePath} ${outputFile.absolutePath}"
+
+        val intent = Intent("com.termux.RUN_COMMAND").apply {
+            `package` = "com.termux"
+            putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/sh")
+            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", command))
+            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        }
+
+        val launched = runCatching { context.startService(intent) }.isSuccess
+
+        if (!launched) {
+            return "无法调用 Termux，请确认已安装 Termux 与 Termux:API"
+        }
+
+        "已发送编译任务到 Termux，完成后到“环境”页点“刷新 Termux 编译结果”"
+    }.getOrElse { "Termux 编译任务发送失败：${it.message}" }
+}
+
+private fun loadTermuxCompiledPdf(
+    context: android.content.Context,
+    workDir: File
+): Triple<Uri, String, Int>? {
+    val outputFile = File(workDir, "output.pdf")
+    if (!outputFile.exists() || outputFile.length() <= 0L) return null
+    val uri = Uri.fromFile(outputFile)
+    val pageCount = getPdfPageCount(context, uri)
+    if (pageCount <= 0) return null
+    return Triple(uri, outputFile.name, pageCount)
 }

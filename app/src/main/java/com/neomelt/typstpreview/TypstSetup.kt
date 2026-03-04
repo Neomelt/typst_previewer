@@ -28,6 +28,9 @@ internal data class TypstAutoConfigResult(
 
 internal suspend fun detectTypstEnvironment(commandPath: String?): TypstEnvStatus {
     val command = commandPath?.takeIf { it.isNotBlank() } ?: "typst"
+    if (command == TERMUX_MODE) {
+        return TypstEnvStatus(true, command, "已启用 Termux 模式")
+    }
     val available = LocalTypstCommandCompiler(command).isAvailable()
     val detail = if (available) {
         "已就绪：$command"

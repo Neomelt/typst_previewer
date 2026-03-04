@@ -67,10 +67,13 @@
 - Added Typst environment setup guide flow:
   - setup dialog (detect/auto-config/import/clear)
   - auto-config scans saved path, app-local binary, Termux path, and system command
-  - cloud-install flow: download typst package (bin/zip URL) and auto-install to app-local bin
+  - cloud-install flow: download typst package (bin/zip/tar.xz URL) and auto-install to app-local bin
   - import typst executable into app-local `files/bin/typst`
   - persist executable path and use it for compile pipeline
 - Updated typ import behavior to auto-render PDF when Typst environment is ready.
+- Added bottom navigation tabs (预览 / 环境 / 教程) and built-in Termux guide panel.
+- Added Termux mode (manual enable) with compile task dispatch + result refresh workflow.
+- Added default-link autofill for official Typst release download.
 - Adjusted top action layout to a two-row structure to prevent button squeeze on narrow phone screens.
 - Validation pass completed with `./gradlew testDebugUnitTest assembleDebug`.
 - Added parser unit tests.

@@ -17,6 +17,7 @@ internal fun TypstSetupDialog(
     downloadUrl: String,
     onDownloadUrlChange: (String) -> Unit,
     onUseDefaultUrl: () -> Unit,
+    onEnableTermuxMode: () -> Unit,
     onDismiss: () -> Unit,
     onDetect: () -> Unit,
     onAutoConfigure: () -> Unit,
@@ -48,6 +49,7 @@ internal fun TypstSetupDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onUseDefaultUrl) { Text("填默认链接") }
                     TextButton(onClick = onAutoConfigure) { Text("自动配置") }
+                    TextButton(onClick = onEnableTermuxMode) { Text("启用Termux") }
                     TextButton(onClick = onInstallFromUrl) { Text("云端安装") }
                     TextButton(onClick = onImportBinary) { Text("导入可执行文件") }
                     TextButton(onClick = onClearConfig) { Text("清除配置") }
