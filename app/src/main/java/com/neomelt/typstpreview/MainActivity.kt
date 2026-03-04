@@ -19,6 +19,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -289,12 +290,22 @@ private fun TypstPreviewScreen() {
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(selected = activeTab == AppTab.PREVIEW, onClick = { activeTab = AppTab.PREVIEW }, label = { Text("预览") }, icon = {})
+                NavigationBarItem(selected = activeTab == AppTab.ENV, onClick = { activeTab = AppTab.ENV }, label = { Text("环境") }, icon = {})
+                NavigationBarItem(selected = activeTab == AppTab.GUIDE, onClick = { activeTab = AppTab.GUIDE }, label = { Text("教程") }, icon = {})
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
         Text("Typst Android 预览器（本地预览 MVP）", style = MaterialTheme.typography.titleLarge)
         StatusBar(status)
 
@@ -452,10 +463,6 @@ private fun TypstPreviewScreen() {
             }
         }
 
-        NavigationBar {
-            NavigationBarItem(selected = activeTab == AppTab.PREVIEW, onClick = { activeTab = AppTab.PREVIEW }, label = { Text("预览") }, icon = {})
-            NavigationBarItem(selected = activeTab == AppTab.ENV, onClick = { activeTab = AppTab.ENV }, label = { Text("环境") }, icon = {})
-            NavigationBarItem(selected = activeTab == AppTab.GUIDE, onClick = { activeTab = AppTab.GUIDE }, label = { Text("教程") }, icon = {})
         }
     }
 
