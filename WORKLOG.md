@@ -57,6 +57,8 @@
   - typ picker now uses broad filter (`*/*`) so non-standard providers can be selected
   - extension whitelist check (`.typ/.txt/.md`) with explicit user guidance for QQ downloads
   - added filename utility tests
+- PNG export now writes directly to system gallery (`MediaStore`) under `Pictures/TypstPreviewer`.
+- Added compatibility manifest permission for Android <= 9 write path.
 - Validation pass completed with `./gradlew testDebugUnitTest assembleDebug`.
 - Added parser unit tests.
 - Added Gradle wrapper and local SDK config (`local.properties`).

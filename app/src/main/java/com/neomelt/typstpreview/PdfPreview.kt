@@ -1,12 +1,14 @@
 package com.neomelt.typstpreview
 
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.provider.MediaStore
 import java.io.File
-import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -76,15 +78,34 @@ internal fun exportCurrentPageAsPng(context: Context, uri: Uri, pageIndex: Int):
     val result = renderPdfPage(context, uri, pageIndex)
     if (result !is PdfRenderResult.Success) return null
 
+    val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+    val displayName = "typst_page_${pageIndex + 1}_$ts.png"
+
     return try {
-        val dir = File(context.getExternalFilesDir(null), "exports")
-        if (!dir.exists()) dir.mkdirs()
-        val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val file = File(dir, "typst_page_${pageIndex + 1}_$ts.png")
-        FileOutputStream(file).use { out ->
-            result.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/TypstPreviewer")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
         }
-        "已导出：${file.absolutePath}"
+
+        val resolver = context.contentResolver
+        val imageUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            ?: return null
+
+        resolver.openOutputStream(imageUri)?.use { out ->
+            result.bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        } ?: return null
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            resolver.update(imageUri, values, null, null)
+        }
+
+        "已导出到相册：$displayName"
     } catch (_: Exception) {
         null
     }
